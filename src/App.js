@@ -1489,21 +1489,44 @@ const BravermanTest = ({ onRetake }) => {
         title={modalContent.title}
         message={modalContent.message}
       />
-      {/* SMART Goals Helper */}
-      <div className="mt-10 bg-[#181818] border border-[#333] rounded-xl shadow-lg p-6 max-w-2xl mx-auto">
-        <h3 className="text-xl font-bold text-[#FF3C00] mb-2">SMART Goals Helper</h3>
-        <p className="text-[#D1D1D1] mb-3">
-          Setting <span className="font-bold text-[#FF3C00]">SMART goals</span> helps you create clear, actionable, and achievable objectives. Use this checklist to make your goals SMART:
+      {/* --- New Informational Section --- */}
+      <div className="mt-10 p-6 bg-[#181818] border border-[#333] rounded-xl shadow-lg">
+        <h3 className="text-2xl font-bold text-[#FF3C00] mb-4">About the Braverman Test</h3>
+        <p className="text-[#D1D1D1] mb-2">
+          The <b>Braverman Test</b> is a self-assessment developed by Dr. Eric Braverman to help you discover which of your four main brain neurotransmitters is most dominant (and which may be deficient): <b>Dopamine</b>, <b>Acetylcholine</b>, <b>GABA</b>, and <b>Serotonin</b>.
         </p>
-        <ul className="list-disc pl-6 text-[#D1D1D1] mb-2">
-          <li><span className="font-bold text-[#FF3C00]">S</span>pecific: Is your goal clear and well-defined?</li>
-          <li><span className="font-bold text-[#FF3C00]">M</span>easurable: Can you track your progress and know when it's done?</li>
-          <li><span className="font-bold text-[#FF3C00]">A</span>chievable: Is it realistic and within your abilities/resources?</li>
-          <li><span className="font-bold text-[#FF3C00]">R</span>elevant: Does it matter to you and align with your bigger objectives?</li>
-          <li><span className="font-bold text-[#FF3C00]">T</span>ime-bound: Does it have a clear deadline or timeframe?</li>
+        <p className="text-[#D1D1D1] mb-2">
+          Each neurotransmitter is linked to specific personality traits, cognitive strengths, and even physical tendencies. The test helps you understand your unique "brain chemistry profile."
+        </p>
+        <ul className="list-disc pl-6 mb-2 text-[#D1D1D1]">
+          <li><b>Dopamine-dominant:</b> Driven, energetic, achievement-oriented, sometimes restless or impulsive.</li>
+          <li><b>Acetylcholine-dominant:</b> Creative, intuitive, excellent memory, emotionally expressive.</li>
+          <li><b>GABA-dominant:</b> Calm, stable, organized, loyal, prefers routine.</li>
+          <li><b>Serotonin-dominant:</b> Optimistic, social, empathetic, lives in the moment.</li>
         </ul>
-        <p className="text-[#D1D1D1] text-sm mt-2">
-          Example: <span className="italic">"Read 10 pages of a non-fiction book every weekday for the next month to improve my knowledge."</span>
+        <h4 className="text-xl font-bold text-[#FF3C00] mt-4 mb-2">Why is the Braverman Test Important?</h4>
+        <ul className="list-disc pl-6 mb-2 text-[#D1D1D1]">
+          <li>Identify your natural strengths and weaknesses (e.g., focus, creativity, resilience, sociability).</li>
+          <li>Recognize why you may struggle with certain habits, moods, or stressors.</li>
+          <li>Personalize your approach to productivity, relationships, and self-care.</li>
+          <li>Find targeted strategies (diet, exercise, supplements, lifestyle changes) to support your brain chemistry and overall well-being.</li>
+        </ul>
+        <h4 className="text-xl font-bold text-[#FF3C00] mt-4 mb-2">How Can Understanding Your Results Change Your Life?</h4>
+        <ul className="list-disc pl-6 mb-2 text-[#D1D1D1]">
+          <li><b>Self-awareness:</b> Better understand your natural tendencies, motivations, and challenges.</li>
+          <li><b>Personal growth:</b> Work on your weaker areas and leverage your strengths.</li>
+          <li><b>Tailored lifestyle:</b> Adjust your habits, nutrition, and routines to support your unique brain chemistry.</li>
+          <li><b>Improved relationships:</b> Communicate and connect more effectively by understanding your profile (and others').</li>
+          <li><b>Better mental health:</b> Use targeted strategies to manage stress, anxiety, or low mood.</li>
+        </ul>
+        <h4 className="text-xl font-bold text-[#FF3C00] mt-4 mb-2">Example: How Results Can Be Used</h4>
+        <ul className="list-disc pl-6 mb-2 text-[#D1D1D1]">
+          <li>If you're <b>dopamine-dominant</b> but feel restless or unfocused, you might benefit from structured goals, regular exercise, and mindfulness.</li>
+          <li>If you're <b>GABA-deficient</b> and feel anxious, you might focus on relaxation techniques, sleep hygiene, and magnesium-rich foods.</li>
+          <li>If you're <b>serotonin-dominant</b> but struggle with low mood, you might benefit from social connection, gratitude practices, and sunlight exposure.</li>
+        </ul>
+        <p className="text-[#D1D1D1] mt-4">
+          <b>The Braverman Test is a powerful tool for self-discovery and personal optimization.</b> By understanding your brain's unique chemistry, you can make smarter choices for your health, productivity, and happiness.
         </p>
       </div>
     </Card>
@@ -3021,11 +3044,11 @@ const Dashboard = ({ userId, userEmail, db, onLogout }) => {
         {/* Home button - always visible */}
         <button
           onClick={() => setShowMobileHome(true)}
-          className="flex-1 text-center text-xs py-2 px-1 rounded-br-lg transition-all duration-200 text-[#FF3C00] hover:text-[#FF3C00]"
+          className="flex-1 text-center text-lg py-4 px-2 rounded-br-2xl font-extrabold transition-all duration-200 text-[#FF3C00] hover:text-[#FF3C00] bg-[#181818] shadow-md"
         >
-          🏠 Home
+          <span style={{ fontSize: '2rem', display: 'block' }}>🏠</span>
+          <span className="block text-base mt-1">Home</span>
         </button>
-        
         {/* Back button - only visible when not in home view */}
         {!showMobileHome && (
           <button
@@ -3084,6 +3107,11 @@ const App = () => {
     setCurrentPage('home');
     setUserId(null); // Clear user ID on logout
   };
+
+  // Ensure app always starts at home page
+  useEffect(() => {
+    setCurrentPage('home');
+  }, []);
 
   if (!isAuthReady) {
     return (
