@@ -88,10 +88,17 @@ const HomePage = ({ onEnterDashboard }) => {
 // --- Pomodoro Timer Component ---
 const PomodoroTimer = ({ userId, db }) => {
   const [pomodoroDuration, setPomodoroDuration] = useState(25); // Default to 25 minutes
+  const [shortBreakDuration, setShortBreakDuration] = useState(5); // Default short break
+  const [longBreakDuration, setLongBreakDuration] = useState(15); // Default long break
+  const [pomodorosUntilLongBreak, setPomodorosUntilLongBreak] = useState(4); // Default 4 pomodoros
   const [minutes, setMinutes] = useState(25);
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [isBreak, setIsBreak] = useState(false);
+  const [isLongBreak, setIsLongBreak] = useState(false);
+  const [completedPomodoros, setCompletedPomodoros] = useState(0);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [newTask, setNewTask] = useState('');
   const [editingTaskId, setEditingTaskId] = useState(null);
@@ -102,6 +109,9 @@ const PomodoroTimer = ({ userId, db }) => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [showFocusScore, setShowFocusScore] = useState(false);
+  const [focusScore, setFocusScore] = useState(5);
+  const [showSettings, setShowSettings] = useState(false);
 
   const timerRef = useRef(null);
   const audioRef = useRef(null);
@@ -188,29 +198,71 @@ const PomodoroTimer = ({ userId, db }) => {
     return () => unsubscribe();
   }, [userId, db]);
 
-  useEffect(() => {
-    if (isActive) {
+    useEffect(() => {
+    if (isActive && !isPaused) {
       timerRef.current = setInterval(() => {
         if (seconds === 0) {
-                  if (minutes === 0) {
-          clearInterval(timerRef.current);
-          setIsActive(false);
-          
-          // Play sound and send notification
-          playSound('timer');
-          sendNotification(
-            isBreak ? 'Break Over!' : 'Pomodoro Complete!',
-            isBreak ? 'Time to get back to work!' : 'Take a break or start a new pomodoro.'
-          );
-          
-          setModalContent({
-            title: isBreak ? 'Break Over!' : 'Pomodoro Complete!',
-            message: isBreak ? 'Time to get back to work!' : 'Take a break or start a new pomodoro.'
-          });
-          setShowModal(true);
-          setIsBreak(!isBreak);
-          setMinutes(isBreak ? 5 : pomodoroDuration); // Toggle between work and short break
-          setSeconds(0);
+          if (minutes === 0) {
+            clearInterval(timerRef.current);
+            setIsActive(false);
+            
+            if (!isBreak) {
+              // Pomodoro completed
+              const newCompletedPomodoros = completedPomodoros + 1;
+              setCompletedPomodoros(newCompletedPomodoros);
+              
+              // Check if it's time for a long break
+              const shouldTakeLongBreak = newCompletedPomodoros % pomodorosUntilLongBreak === 0;
+              
+              // Update session in database
+              if (currentSessionId) {
+                updateDoc(doc(db, `artifacts/${appId}/users/${userId}/pomodoroSessions`, currentSessionId), {
+                  completed: true,
+                  endTime: new Date(),
+                  duration: pomodoroDuration
+                });
+              }
+              
+              // Show focus score dialog
+              setShowFocusScore(true);
+              
+              // Play sound and send notification
+              playSound('timer');
+              sendNotification(
+                'Pomodoro Complete!',
+                shouldTakeLongBreak ? 'Great work! Time for a long break.' : 'Take a short break or continue working.'
+              );
+              
+              setModalContent({
+                title: 'Pomodoro Complete!',
+                message: shouldTakeLongBreak ? 'Great work! Time for a long break.' : 'Take a short break or continue working.'
+              });
+              setShowModal(true);
+              
+              // Set up next break
+              setIsBreak(true);
+              setIsLongBreak(shouldTakeLongBreak);
+              setMinutes(shouldTakeLongBreak ? longBreakDuration : shortBreakDuration);
+              setSeconds(0);
+            } else {
+              // Break completed
+              playSound('timer');
+              sendNotification(
+                isLongBreak ? 'Long Break Over!' : 'Break Over!',
+                'Time to get back to work!'
+              );
+              
+              setModalContent({
+                title: isLongBreak ? 'Long Break Over!' : 'Break Over!',
+                message: 'Time to get back to work!'
+              });
+              setShowModal(true);
+              
+              setIsBreak(false);
+              setIsLongBreak(false);
+              setMinutes(pomodoroDuration);
+              setSeconds(0);
+            }
           } else {
             setMinutes(prevMinutes => prevMinutes - 1);
             setSeconds(59);
@@ -224,18 +276,21 @@ const PomodoroTimer = ({ userId, db }) => {
     }
 
     return () => clearInterval(timerRef.current);
-  }, [isActive, minutes, seconds, isBreak, pomodoroDuration]);
+  }, [isActive, isPaused, minutes, seconds, isBreak, isLongBreak, pomodoroDuration, shortBreakDuration, longBreakDuration, completedPomodoros, pomodorosUntilLongBreak, currentSessionId, userId, db]);
 
   const toggleTimer = async () => {
-    if (!isActive) {
+    if (!isActive && !isPaused) {
       // Starting timer - record session start
       try {
-        await addDoc(collection(db, `artifacts/${appId}/users/${userId}/pomodoroSessions`), {
+        const sessionRef = await addDoc(collection(db, `artifacts/${appId}/users/${userId}/pomodoroSessions`), {
           startTime: new Date(),
           duration: pomodoroDuration,
           isBreak: isBreak,
-          completed: false
+          isLongBreak: isLongBreak,
+          completed: false,
+          focusScore: null
         });
+        setCurrentSessionId(sessionRef.id);
       } catch (e) {
         console.error("Error recording pomodoro session:", e);
       }
@@ -243,21 +298,56 @@ const PomodoroTimer = ({ userId, db }) => {
     setIsActive(!isActive);
   };
 
+  const pauseTimer = () => {
+    setIsPaused(!isPaused);
+  };
+
   const resetTimer = () => {
     clearInterval(timerRef.current);
     setIsActive(false);
+    setIsPaused(false);
     setIsBreak(false);
-    setMinutes(pomodoroDuration); // Reset to current pomodoro duration
+    setIsLongBreak(false);
+    setMinutes(pomodoroDuration);
     setSeconds(0);
+    setCurrentSessionId(null);
   };
 
   const startBreak = () => {
     clearInterval(timerRef.current);
     setIsActive(true);
+    setIsPaused(false);
     setIsBreak(true);
-    setMinutes(5); // Short break
+    setIsLongBreak(false);
+    setMinutes(shortBreakDuration);
     setSeconds(0);
   };
+
+  const startLongBreak = () => {
+    clearInterval(timerRef.current);
+    setIsActive(true);
+    setIsPaused(false);
+    setIsBreak(true);
+    setIsLongBreak(true);
+    setMinutes(longBreakDuration);
+    setSeconds(0);
+  };
+
+  const saveFocusScore = async () => {
+    if (currentSessionId) {
+      try {
+        await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/pomodoroSessions`, currentSessionId), {
+          focusScore: focusScore
+        });
+      } catch (e) {
+        console.error("Error saving focus score:", e);
+      }
+    }
+    setShowFocusScore(false);
+    setFocusScore(5);
+  };
+
+
 
   const addTask = async () => {
     if (newTask.trim() === '') {
@@ -374,14 +464,40 @@ const PomodoroTimer = ({ userId, db }) => {
       {/* Timer Controls */}
       <div className="flex justify-center space-x-2 sm:space-x-4 mb-8">
         <NeonButton onClick={toggleTimer}>
-          {isActive ? 'Pause' : 'Start'}
+          {isActive ? (isPaused ? 'Resume' : 'Pause') : 'Start'}
         </NeonButton>
+        {isActive && !isPaused && (
+          <NeonButton onClick={pauseTimer}>Pause</NeonButton>
+        )}
         <NeonButton onClick={resetTimer}>Reset</NeonButton>
-        <NeonButton onClick={startBreak}>Break</NeonButton>
+        {!isBreak && (
+          <>
+            <NeonButton onClick={startBreak}>Short Break</NeonButton>
+            <NeonButton onClick={startLongBreak}>Long Break</NeonButton>
+          </>
+        )}
       </div>
 
-      {/* Notification and Sound Settings */}
+      {/* Session Info */}
+      <div className="text-center mb-4">
+        <div className="text-[#D1D1D1] text-lg">
+          Completed Pomodoros: <span className="text-[#FF3C00] font-bold">{completedPomodoros}</span>
+          {completedPomodoros > 0 && (
+            <span className="text-gray-500 ml-2">
+              (Next long break after {pomodorosUntilLongBreak - (completedPomodoros % pomodorosUntilLongBreak)} more)
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Settings and Controls */}
       <div className="flex flex-col sm:flex-row justify-center items-center space-y-2 sm:space-y-0 sm:space-x-4 mb-6">
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          className="px-4 py-2 rounded-br-lg text-sm font-bold transition-colors duration-200 bg-gray-700 text-[#D1D1D1] hover:bg-gray-600"
+        >
+          ⚙️ Settings
+        </button>
         <button
           onClick={requestNotificationPermission}
           className={`px-4 py-2 rounded-br-lg text-sm font-bold transition-colors duration-200
@@ -397,6 +513,48 @@ const PomodoroTimer = ({ userId, db }) => {
           {soundEnabled ? '🔊 Sound On' : '🔇 Sound Off'}
         </button>
       </div>
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <Card className="mb-6">
+          <h3 className="text-xl font-bold text-[#FF3C00] mb-4">Timer Settings</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[#D1D1D1] mb-2 font-semibold">Short Break Duration (minutes)</label>
+              <input
+                type="number"
+                value={shortBreakDuration}
+                onChange={(e) => setShortBreakDuration(parseInt(e.target.value) || 5)}
+                min="1"
+                max="30"
+                className="w-full p-2 bg-[#0F0F0F] border border-[#333] rounded-lg text-[#D1D1D1]"
+              />
+            </div>
+            <div>
+              <label className="block text-[#D1D1D1] mb-2 font-semibold">Long Break Duration (minutes)</label>
+              <input
+                type="number"
+                value={longBreakDuration}
+                onChange={(e) => setLongBreakDuration(parseInt(e.target.value) || 15)}
+                min="5"
+                max="60"
+                className="w-full p-2 bg-[#0F0F0F] border border-[#333] rounded-lg text-[#D1D1D1]"
+              />
+            </div>
+            <div>
+              <label className="block text-[#D1D1D1] mb-2 font-semibold">Pomodoros until Long Break</label>
+              <input
+                type="number"
+                value={pomodorosUntilLongBreak}
+                onChange={(e) => setPomodorosUntilLongBreak(parseInt(e.target.value) || 4)}
+                min="2"
+                max="10"
+                className="w-full p-2 bg-[#0F0F0F] border border-[#333] rounded-lg text-[#D1D1D1]"
+              />
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Task Management */}
       <h3 className="text-2xl text-[#FF3C00] font-bold mb-4 uppercase">Tasks</h3>
@@ -483,6 +641,45 @@ const PomodoroTimer = ({ userId, db }) => {
         onConfirm={modalConfirmAction}
         showConfirm={true}
       />
+      
+      {/* Focus Score Modal */}
+      {showFocusScore && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full text-center">
+            <h3 className="text-xl text-[#FF3C00] font-bold mb-4">Rate Your Focus</h3>
+            <p className="text-[#D1D1D1] mb-6">How focused were you during this Pomodoro session?</p>
+            
+            <div className="flex justify-center space-x-2 mb-6">
+              {[1, 2, 3, 4, 5].map(score => (
+                <button
+                  key={score}
+                  onClick={() => setFocusScore(score)}
+                  className={`w-12 h-12 rounded-full text-lg font-bold transition-all duration-200
+                              ${focusScore === score 
+                                ? 'bg-[#FF3C00] text-white' 
+                                : 'bg-gray-700 text-[#D1D1D1] hover:bg-gray-600'}`}
+                >
+                  {score}
+                </button>
+              ))}
+            </div>
+            
+            <div className="text-sm text-gray-500 mb-6">
+              {focusScore === 1 && 'Very Distracted'}
+              {focusScore === 2 && 'Somewhat Distracted'}
+              {focusScore === 3 && 'Moderate Focus'}
+              {focusScore === 4 && 'Good Focus'}
+              {focusScore === 5 && 'Excellent Focus'}
+            </div>
+            
+            <div className="flex justify-center space-x-4">
+              <NeonButton onClick={saveFocusScore}>
+                Save Score
+              </NeonButton>
+            </div>
+          </Card>
+        </div>
+      )}
     </Card>
   );
 };
@@ -1337,6 +1534,7 @@ const TimeBoxingScheduler = ({ userId, db }) => {
   const [newEventEndTime, setNewEventEndTime] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', message: '' });
+  const [showCompleted, setShowCompleted] = useState(true);
 
   const scheduledEventsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/scheduledEvents`);
 
@@ -1413,6 +1611,19 @@ const TimeBoxingScheduler = ({ userId, db }) => {
     } catch (e) {
       console.error("Error deleting event: ", e);
       setModalContent({ title: 'Error', message: 'Failed to delete event. Please try again.' });
+      setShowModal(true);
+    }
+  };
+
+  const toggleEventCompletion = async (id, completed) => {
+    try {
+      await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/scheduledEvents`, id), {
+        completed: !completed,
+        completedAt: !completed ? new Date().toISOString() : null
+      });
+    } catch (e) {
+      console.error("Error updating event completion: ", e);
+      setModalContent({ title: 'Error', message: 'Failed to update event completion. Please try again.' });
       setShowModal(true);
     }
   };
@@ -1521,35 +1732,75 @@ const TimeBoxingScheduler = ({ userId, db }) => {
       </Card>
 
       {/* Scheduled Events List */}
-      <h3 className="text-2xl text-[#FF3C00] font-bold mb-4 uppercase">Scheduled Events</h3>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-2xl text-[#FF3C00] font-bold uppercase">Scheduled Events</h3>
+        <div className="flex items-center space-x-4">
+          <label className="flex items-center text-[#D1D1D1]">
+            <input
+              type="checkbox"
+              checked={showCompleted}
+              onChange={(e) => setShowCompleted(e.target.checked)}
+              className="mr-2 text-[#FF3C00] bg-black border-gray-600 rounded focus:ring-[#FF3C00]"
+            />
+            Show Completed
+          </label>
+        </div>
+      </div>
       <div className="flex-grow overflow-y-auto pr-2">
         {sortedDates.length === 0 ? (
           <p className="text-center text-[#D1D1D1] opacity-70">No events scheduled. Add one above!</p>
         ) : (
-          sortedDates.map(date => (
-            <div key={date} className="mb-6">
-              <h4 className="text-xl text-[#FF3C00] font-bold mb-3 border-b border-[#333] pb-2">{new Date(date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h4>
-              <ul className="space-y-2">
-                {groupedEvents[date].map(event => (
-                  <li key={event.id} className="bg-[#0F0F0F] p-3 rounded-br-lg border border-[#222] flex justify-between items-center">
-                    <div>
-                      <p className="text-lg text-[#D1D1D1] font-bold">{event.title}</p>
-                      <p className="text-sm text-gray-400">{event.startTime} - {event.endTime}</p>
-                    </div>
-                    <button
-                      onClick={() => deleteEvent(event.id)}
-                      className="text-gray-400 hover:text-red-500 transition-colors duration-200 p-1"
-                      title="Delete Event"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))
+          sortedDates.map(date => {
+            const filteredEvents = groupedEvents[date].filter(event => 
+              showCompleted || !event.completed
+            );
+            
+            if (filteredEvents.length === 0) return null;
+            
+            return (
+              <div key={date} className="mb-6">
+                <h4 className="text-xl text-[#FF3C00] font-bold mb-3 border-b border-[#333] pb-2">
+                  {new Date(date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </h4>
+                <ul className="space-y-2">
+                  {filteredEvents.map(event => (
+                    <li key={event.id} className={`bg-[#0F0F0F] p-3 rounded-br-lg border border-[#222] flex justify-between items-center transition-all duration-200 ${
+                      event.completed ? 'opacity-60 bg-[#0a0a0a]' : ''
+                    }`}>
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={event.completed || false}
+                          onChange={() => toggleEventCompletion(event.id, event.completed || false)}
+                          className="h-5 w-5 text-[#FF3C00] bg-black border-gray-600 rounded focus:ring-[#FF3C00]"
+                        />
+                        <div>
+                          <p className={`text-lg font-bold ${event.completed ? 'line-through text-gray-500' : 'text-[#D1D1D1]'}`}>
+                            {event.title}
+                          </p>
+                          <p className="text-sm text-gray-400">{event.startTime} - {event.endTime}</p>
+                          {event.completed && event.completedAt && (
+                            <p className="text-xs text-green-500">
+                              Completed: {new Date(event.completedAt).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => deleteEvent(event.id)}
+                        className="text-gray-400 hover:text-red-500 transition-colors duration-200 p-1"
+                        title="Delete Event"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })
         )}
       </div>
       <Modal

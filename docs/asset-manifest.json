@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/DFRNT-hub-tech/static/css/main.8c69ee10.css",
-    "main.js": "/DFRNT-hub-tech/static/js/main.bded2ded.js",
+    "main.js": "/DFRNT-hub-tech/static/js/main.a148f54f.js",
     "index.html": "/DFRNT-hub-tech/index.html",
     "main.8c69ee10.css.map": "/DFRNT-hub-tech/static/css/main.8c69ee10.css.map",
-    "main.bded2ded.js.map": "/DFRNT-hub-tech/static/js/main.bded2ded.js.map"
+    "main.a148f54f.js.map": "/DFRNT-hub-tech/static/js/main.a148f54f.js.map"
   },
   "entrypoints": [
     "static/css/main.8c69ee10.css",
-    "static/js/main.bded2ded.js"
+    "static/js/main.a148f54f.js"
   ]
 }
