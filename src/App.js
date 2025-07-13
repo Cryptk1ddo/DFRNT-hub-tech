@@ -100,10 +100,66 @@ const PomodoroTimer = ({ userId, db }) => {
   const [modalContent, setModalContent] = useState({ title: '', message: '' });
   const [modalConfirmAction, setModalConfirmAction] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
   const timerRef = useRef(null);
+  const audioRef = useRef(null);
 
   const tasksCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/tasks`);
+
+  // Request notification permission
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window) {
+      const permission = await Notification.requestPermission();
+      setNotificationsEnabled(permission === 'granted');
+      return permission === 'granted';
+    }
+    return false;
+  };
+
+  // Send notification
+  const sendNotification = (title, body) => {
+    if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, {
+        body: body,
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        requireInteraction: true
+      });
+    }
+  };
+
+  // Play sound effect
+  const playSound = (type) => {
+    if (!soundEnabled) return;
+    
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    if (type === 'timer') {
+      // Timer completion sound - ascending tone
+      oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.5);
+      oscillator.type = 'sine';
+    } else if (type === 'task') {
+      // Task completion sound - success chime
+      oscillator.frequency.setValueAtTime(523, audioContext.currentTime);
+      oscillator.frequency.setValueAtTime(659, audioContext.currentTime + 0.1);
+      oscillator.frequency.setValueAtTime(784, audioContext.currentTime + 0.2);
+      oscillator.type = 'triangle';
+    }
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.5);
+  };
 
   useEffect(() => {
     // Update minutes when pomodoroDuration changes, only if not active
@@ -136,17 +192,25 @@ const PomodoroTimer = ({ userId, db }) => {
     if (isActive) {
       timerRef.current = setInterval(() => {
         if (seconds === 0) {
-          if (minutes === 0) {
-            clearInterval(timerRef.current);
-            setIsActive(false);
-            setModalContent({
-              title: isBreak ? 'Break Over!' : 'Pomodoro Complete!',
-              message: isBreak ? 'Time to get back to work!' : 'Take a break or start a new pomodoro.'
-            });
-            setShowModal(true);
-            setIsBreak(!isBreak);
-            setMinutes(isBreak ? 5 : pomodoroDuration); // Toggle between work and short break
-            setSeconds(0);
+                  if (minutes === 0) {
+          clearInterval(timerRef.current);
+          setIsActive(false);
+          
+          // Play sound and send notification
+          playSound('timer');
+          sendNotification(
+            isBreak ? 'Break Over!' : 'Pomodoro Complete!',
+            isBreak ? 'Time to get back to work!' : 'Take a break or start a new pomodoro.'
+          );
+          
+          setModalContent({
+            title: isBreak ? 'Break Over!' : 'Pomodoro Complete!',
+            message: isBreak ? 'Time to get back to work!' : 'Take a break or start a new pomodoro.'
+          });
+          setShowModal(true);
+          setIsBreak(!isBreak);
+          setMinutes(isBreak ? 5 : pomodoroDuration); // Toggle between work and short break
+          setSeconds(0);
           } else {
             setMinutes(prevMinutes => prevMinutes - 1);
             setSeconds(59);
@@ -162,7 +226,20 @@ const PomodoroTimer = ({ userId, db }) => {
     return () => clearInterval(timerRef.current);
   }, [isActive, minutes, seconds, isBreak, pomodoroDuration]);
 
-  const toggleTimer = () => {
+  const toggleTimer = async () => {
+    if (!isActive) {
+      // Starting timer - record session start
+      try {
+        await addDoc(collection(db, `artifacts/${appId}/users/${userId}/pomodoroSessions`), {
+          startTime: new Date(),
+          duration: pomodoroDuration,
+          isBreak: isBreak,
+          completed: false
+        });
+      } catch (e) {
+        console.error("Error recording pomodoro session:", e);
+      }
+    }
     setIsActive(!isActive);
   };
 
@@ -201,7 +278,15 @@ const PomodoroTimer = ({ userId, db }) => {
   const toggleTaskCompletion = async (id, completed) => {
     try {
       const taskDocRef = doc(db, `artifacts/${appId}/users/${userId}/tasks`, id);
-      await updateDoc(taskDocRef, { completed: !completed });
+      await updateDoc(taskDocRef, { 
+        completed: !completed,
+        completedAt: !completed ? new Date() : null
+      });
+      
+      // Play sound when task is completed
+      if (!completed) {
+        playSound('task');
+      }
     } catch (e) {
       console.error("Error updating document: ", e);
       setModalContent({ title: 'Error', message: 'Failed to update task. Please try again.' });
@@ -293,6 +378,24 @@ const PomodoroTimer = ({ userId, db }) => {
         </NeonButton>
         <NeonButton onClick={resetTimer}>Reset</NeonButton>
         <NeonButton onClick={startBreak}>Break</NeonButton>
+      </div>
+
+      {/* Notification and Sound Settings */}
+      <div className="flex flex-col sm:flex-row justify-center items-center space-y-2 sm:space-y-0 sm:space-x-4 mb-6">
+        <button
+          onClick={requestNotificationPermission}
+          className={`px-4 py-2 rounded-br-lg text-sm font-bold transition-colors duration-200
+                      ${notificationsEnabled ? 'bg-green-600 text-white' : 'bg-gray-700 text-[#D1D1D1] hover:bg-gray-600'}`}
+        >
+          {notificationsEnabled ? '🔔 Notifications On' : '🔕 Enable Notifications'}
+        </button>
+        <button
+          onClick={() => setSoundEnabled(!soundEnabled)}
+          className={`px-4 py-2 rounded-br-lg text-sm font-bold transition-colors duration-200
+                      ${soundEnabled ? 'bg-blue-600 text-white' : 'bg-gray-700 text-[#D1D1D1] hover:bg-gray-600'}`}
+        >
+          {soundEnabled ? '🔊 Sound On' : '🔇 Sound Off'}
+        </button>
       </div>
 
       {/* Task Management */}
@@ -1595,6 +1698,284 @@ const TrainingHub = ({ userId, db }) => {
   );
 };
 
+// --- Progress Visualization Component ---
+const Progress = ({ userId, db }) => {
+  const [timeRange, setTimeRange] = useState('week'); // 'day', 'week', 'month'
+  const [productivityData, setProductivityData] = useState({
+    pomodoros: [],
+    tasks: [],
+    focusTime: []
+  });
+  const [loading, setLoading] = useState(true);
+
+  const progressCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/progress`);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const fetchProgressData = async () => {
+      setLoading(true);
+      try {
+        // Get date range
+        const now = new Date();
+        let startDate;
+        switch (timeRange) {
+          case 'day':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+          case 'week':
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case 'month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            break;
+          default:
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        }
+
+        // Fetch pomodoro sessions
+        const pomodoroQuery = query(
+          collection(db, `artifacts/${appId}/users/${userId}/pomodoroSessions`),
+          where('startTime', '>=', startDate),
+          orderBy('startTime', 'desc')
+        );
+
+        // Fetch completed tasks
+        const tasksQuery = query(
+          collection(db, `artifacts/${appId}/users/${userId}/tasks`),
+          where('completed', '==', true),
+          where('completedAt', '>=', startDate),
+          orderBy('completedAt', 'desc')
+        );
+
+        const [pomodoroSnapshot, tasksSnapshot] = await Promise.all([
+          getDocs(pomodoroQuery),
+          getDocs(tasksQuery)
+        ]);
+
+        const pomodoros = pomodoroSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        const tasks = tasksSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        setProductivityData({ pomodoros, tasks, focusTime: [] });
+      } catch (error) {
+        console.error("Error fetching progress data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProgressData();
+  }, [userId, timeRange]);
+
+  // Calculate statistics
+  const stats = {
+    totalPomodoros: productivityData.pomodoros.length,
+    totalTasks: productivityData.tasks.length,
+    totalFocusTime: productivityData.pomodoros.reduce((total, session) => {
+      const duration = session.duration || 25; // Default 25 minutes
+      return total + duration;
+    }, 0),
+    averagePomodorosPerDay: timeRange === 'day' ? productivityData.pomodoros.length : 
+                           productivityData.pomodoros.length / (timeRange === 'week' ? 7 : 30)
+  };
+
+  // Generate chart data
+  const generateChartData = () => {
+    const data = [];
+    const now = new Date();
+    
+    for (let i = 0; i < (timeRange === 'day' ? 24 : timeRange === 'week' ? 7 : 30); i++) {
+      const date = new Date(now);
+      if (timeRange === 'day') {
+        date.setHours(date.getHours() - i);
+      } else {
+        date.setDate(date.getDate() - i);
+      }
+      
+      const dayStart = new Date(date);
+      const dayEnd = new Date(date);
+      if (timeRange === 'day') {
+        dayStart.setMinutes(0, 0, 0);
+        dayEnd.setMinutes(59, 59, 999);
+      } else {
+        dayStart.setHours(0, 0, 0, 0);
+        dayEnd.setHours(23, 59, 59, 999);
+      }
+
+      const dayPomodoros = productivityData.pomodoros.filter(session => {
+        const sessionTime = session.startTime?.toDate?.() || new Date(session.startTime);
+        return sessionTime >= dayStart && sessionTime <= dayEnd;
+      });
+
+      const dayTasks = productivityData.tasks.filter(task => {
+        const taskTime = task.completedAt?.toDate?.() || new Date(task.completedAt);
+        return taskTime >= dayStart && taskTime <= dayEnd;
+      });
+
+      data.unshift({
+        label: timeRange === 'day' ? `${dayStart.getHours()}:00` : dayStart.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric' 
+        }),
+        pomodoros: dayPomodoros.length,
+        tasks: dayTasks.length
+      });
+    }
+    
+    return data;
+  };
+
+  const chartData = generateChartData();
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-[#FF3C00] mb-4">📊 Progress Dashboard</h2>
+        <p className="text-[#D1D1D1] mb-8">Track your productivity and focus metrics</p>
+      </div>
+
+      {/* Time Range Selector */}
+      <div className="flex justify-center mb-6">
+        <div className="bg-[#1a1a1a] rounded-lg p-1 border border-[#333]">
+          {['day', 'week', 'month'].map(range => (
+            <button
+              key={range}
+              onClick={() => setTimeRange(range)}
+              className={`px-4 py-2 rounded-md transition-all duration-200 capitalize ${
+                timeRange === range 
+                  ? 'bg-[#FF3C00] text-white' 
+                  : 'text-[#D1D1D1] hover:text-[#FF3C00]'
+              }`}
+            >
+              {range}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <Card>
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF3C00] mx-auto mb-4"></div>
+            <p className="text-[#D1D1D1]">Loading progress data...</p>
+          </div>
+        </Card>
+      ) : (
+        <>
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <Card className="text-center">
+              <div className="text-3xl font-bold text-[#FF3C00] mb-2">{stats.totalPomodoros}</div>
+              <div className="text-[#D1D1D1] text-sm">Pomodoros</div>
+            </Card>
+            <Card className="text-center">
+              <div className="text-3xl font-bold text-[#FF3C00] mb-2">{stats.totalTasks}</div>
+              <div className="text-[#D1D1D1] text-sm">Tasks Completed</div>
+            </Card>
+            <Card className="text-center">
+              <div className="text-3xl font-bold text-[#FF3C00] mb-2">{stats.totalFocusTime}</div>
+              <div className="text-[#D1D1D1] text-sm">Minutes Focused</div>
+            </Card>
+            <Card className="text-center">
+              <div className="text-3xl font-bold text-[#FF3C00] mb-2">{stats.averagePomodorosPerDay.toFixed(1)}</div>
+              <div className="text-[#D1D1D1] text-sm">Avg Pomodoros/Day</div>
+            </Card>
+          </div>
+
+          {/* Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Pomodoros Chart */}
+            <Card>
+              <h3 className="text-xl font-bold text-[#FF3C00] mb-4">Pomodoros Completed</h3>
+              <div className="h-64 flex items-end justify-between space-x-1">
+                {chartData.map((data, index) => (
+                  <div key={index} className="flex-1 flex flex-col items-center">
+                    <div 
+                      className="w-full bg-[#FF3C00] rounded-t transition-all duration-300 hover:bg-[#FF3C00]/80"
+                      style={{ 
+                        height: `${Math.max((data.pomodoros / Math.max(...chartData.map(d => d.pomodoros))) * 200, 4)}px` 
+                      }}
+                    ></div>
+                    <div className="text-xs text-[#D1D1D1] mt-2 text-center">
+                      {data.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Tasks Chart */}
+            <Card>
+              <h3 className="text-xl font-bold text-[#FF3C00] mb-4">Tasks Completed</h3>
+              <div className="h-64 flex items-end justify-between space-x-1">
+                {chartData.map((data, index) => (
+                  <div key={index} className="flex-1 flex flex-col items-center">
+                    <div 
+                      className="w-full bg-blue-500 rounded-t transition-all duration-300 hover:bg-blue-400"
+                      style={{ 
+                        height: `${Math.max((data.tasks / Math.max(...chartData.map(d => d.tasks))) * 200, 4)}px` 
+                      }}
+                    ></div>
+                    <div className="text-xs text-[#D1D1D1] mt-2 text-center">
+                      {data.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          {/* Recent Activity */}
+          <Card>
+            <h3 className="text-xl font-bold text-[#FF3C00] mb-4">Recent Activity</h3>
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {productivityData.pomodoros.slice(0, 5).map((session, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-[#0F0F0F] rounded-lg">
+                  <div className="flex items-center">
+                    <span className="text-[#FF3C00] mr-3">⏰</span>
+                    <div>
+                      <div className="text-[#D1D1D1] font-semibold">Pomodoro Session</div>
+                      <div className="text-sm text-gray-500">
+                        {session.startTime?.toDate?.().toLocaleString() || 'Recent'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[#FF3C00] font-bold">{session.duration || 25}min</div>
+                </div>
+              ))}
+              {productivityData.tasks.slice(0, 5).map((task, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-[#0F0F0F] rounded-lg">
+                  <div className="flex items-center">
+                    <span className="text-green-500 mr-3">✅</span>
+                    <div>
+                      <div className="text-[#D1D1D1] font-semibold">{task.text}</div>
+                      <div className="text-sm text-gray-500">
+                        {task.completedAt?.toDate?.().toLocaleString() || 'Recent'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {productivityData.pomodoros.length === 0 && productivityData.tasks.length === 0 && (
+                <div className="text-center text-[#D1D1D1] py-8">
+                  No activity yet. Start using the Pomodoro timer and completing tasks to see your progress!
+                </div>
+              )}
+            </div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+};
+
 // --- Notes Component ---
 const Notes = ({ userId, db }) => {
   const [noteType, setNoteType] = useState('bullet'); // 'bullet' or 'daily'
@@ -1921,6 +2302,8 @@ const Dashboard = ({ userId, db, onLogout }) => {
         switch (currentPage) {
           case 'notes':
             return <Notes userId={userId} db={db} />;
+          case 'progress':
+            return <Progress userId={userId} db={db} />;
           default:
             return <Notes userId={userId} db={db} />;
         }
@@ -1968,7 +2351,8 @@ const Dashboard = ({ userId, db, onLogout }) => {
         icon: '📝', 
         description: 'Track your progress and insights',
         pages: [
-          { id: 'notes', label: 'Notes', icon: '📝', description: 'Bullet notes and daily reports' }
+          { id: 'notes', label: 'Notes', icon: '📝', description: 'Bullet notes and daily reports' },
+          { id: 'progress', label: 'Progress', icon: '📊', description: 'Productivity charts and stats' }
         ]
       },
       { 
@@ -2040,6 +2424,7 @@ const Dashboard = ({ userId, db, onLogout }) => {
                 {currentSection === 'act' && currentPage === 'pomodoro' && '⏰ Pomodoro Timer'}
                 {currentSection === 'act' && currentPage === 'binaural' && '🎧 Binaural Beats'}
                 {currentSection === 'review' && currentPage === 'notes' && '📝 Notes'}
+                {currentSection === 'review' && currentPage === 'progress' && '📊 Progress'}
                 {currentSection === 'library' && currentPage === 'guides' && '📖 Guides'}
                 {currentSection === 'library' && currentPage === 'nootropics' && '💊 Nootropics'}
                 {currentSection === 'library' && currentPage === 'training' && '🧠 Training Hub'}
@@ -2093,7 +2478,8 @@ const Dashboard = ({ userId, db, onLogout }) => {
               label: 'Review', 
               icon: '📝',
               pages: [
-                { id: 'notes', label: 'Notes', icon: '📝' }
+                { id: 'notes', label: 'Notes', icon: '📝' },
+                { id: 'progress', label: 'Progress', icon: '📊' }
               ]
             },
             { 
