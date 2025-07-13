@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, deleteDoc, updateDoc, addDoc, orderBy, where, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, deleteDoc, updateDoc, addDoc, orderBy, where, serverTimestamp, getDocs } from 'firebase/firestore';
 import * as Tone from 'tone'; // Import Tone.js as a namespace
 
 // Firebase configuration and initialization
@@ -127,6 +127,8 @@ const PomodoroTimer = ({ userId, db }) => {
   const [showFocusScore, setShowFocusScore] = useState(false);
   const [focusScore, setFocusScore] = useState(5);
   const [showSettings, setShowSettings] = useState(false);
+  const [scheduledEvents, setScheduledEvents] = useState([]); // For Scheduler integration
+  const [selectedEventId, setSelectedEventId] = useState('');
 
   const timerRef = useRef(null);
   const audioRef = useRef(null);
@@ -211,6 +213,22 @@ const PomodoroTimer = ({ userId, db }) => {
     });
 
     return () => unsubscribe();
+  }, [userId, db]);
+
+  // Fetch today's scheduled events
+  useEffect(() => {
+    if (!userId) return;
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+    const eventsRef = collection(db, `artifacts/${appId}/users/${userId}/scheduledEvents`);
+    const q = query(eventsRef, where('date', '==', todayStr));
+    const unsub = onSnapshot(q, (snap) => {
+      setScheduledEvents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
   }, [userId, db]);
 
     useEffect(() => {
@@ -303,7 +321,8 @@ const PomodoroTimer = ({ userId, db }) => {
           isBreak: isBreak,
           isLongBreak: isLongBreak,
           completed: false,
-          focusScore: null
+          focusScore: null,
+          taskId: selectedEventId || null // Link to Scheduler event if selected
         });
         setCurrentSessionId(sessionRef.id);
       } catch (e) {
@@ -449,6 +468,22 @@ const PomodoroTimer = ({ userId, db }) => {
   return (
     <Card className="w-full h-full flex flex-col p-4 md:p-6">
       <h2 className="text-3xl text-[#FF3C00] font-bold mb-6 uppercase">Pomodoro Timer</h2>
+      {/* Task selector */}
+      {scheduledEvents.length > 0 && (
+        <div className="mb-4">
+          <label className="block text-[#FF3C00] text-lg mb-2">Focus on Scheduled Task</label>
+          <select
+            value={selectedEventId}
+            onChange={e => setSelectedEventId(e.target.value)}
+            className="w-full p-2 rounded-lg bg-[#1a1a1a] text-[#D1D1D1] border border-[#333]"
+          >
+            <option value="">-- None (Ad-hoc Pomodoro) --</option>
+            {scheduledEvents.map(ev => (
+              <option key={ev.id} value={ev.id}>{ev.title} ({ev.startTime}-{ev.endTime})</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Pomodoro Duration Presets */}
       <div className="mb-6">
@@ -1710,6 +1745,7 @@ const TimeBoxingScheduler = ({ userId, db }) => {
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', message: '' });
   const [showCompleted, setShowCompleted] = useState(true);
+  const [pomodoroCounts, setPomodoroCounts] = useState({}); // eventId -> count
 
   const scheduledEventsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/scheduledEvents`);
 
@@ -1743,6 +1779,25 @@ const TimeBoxingScheduler = ({ userId, db }) => {
 
     return () => unsubscribe();
   }, [userId, db]);
+
+  useEffect(() => {
+    if (!userId || events.length === 0) return;
+    const fetchCounts = async () => {
+      const sessionsRef = collection(db, `artifacts/${appId}/users/${userId}/pomodoroSessions`);
+      const q = query(sessionsRef, where('completed', '==', true));
+      const snap = await getDocs(q);
+      const counts = {};
+      events.forEach(ev => { counts[ev.id] = 0; });
+      snap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.taskId && counts[data.taskId] !== undefined) {
+          counts[data.taskId] += 1;
+        }
+      });
+      setPomodoroCounts(counts);
+    };
+    fetchCounts();
+  }, [userId, db, events]);
 
   const addEvent = async () => {
     if (newEventTitle.trim() === '' || newEventDate.trim() === '' || newEventStartTime.trim() === '' || newEventEndTime.trim() === '') {
@@ -1959,6 +2014,8 @@ const TimeBoxingScheduler = ({ userId, db }) => {
                               Completed: {new Date(event.completedAt).toLocaleString()}
                             </p>
                           )}
+                          {/* Pomodoro count */}
+                          <p className="text-xs text-[#FF3C00] mt-1">🍅 Pomodoros: {pomodoroCounts[event.id] || 0}</p>
                         </div>
                       </div>
                       <button
