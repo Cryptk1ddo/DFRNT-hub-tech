@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, deleteDoc, updateDoc, addDoc, orderBy, where } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, deleteDoc, updateDoc, addDoc, orderBy, where, serverTimestamp } from 'firebase/firestore';
 import * as Tone from 'tone'; // Import Tone.js as a namespace
 
 // Firebase configuration and initialization
@@ -2700,7 +2700,7 @@ const Notes = ({ userId, db }) => {
 };
 
 // --- Dashboard Component ---
-const Dashboard = ({ userId, db, onLogout }) => {
+const Dashboard = ({ userId, userEmail, db, onLogout }) => {
   const [currentSection, setCurrentSection] = useState('plan'); // 'plan', 'act', 'review', 'library'
   const [currentPage, setCurrentPage] = useState('scheduler'); // Default page within section
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
@@ -2741,6 +2741,8 @@ const Dashboard = ({ userId, db, onLogout }) => {
             return <Nootropics />;
           case 'training':
             return <TrainingHub userId={userId} db={db} />;
+          case 'admin':
+            return <AdminPanel db={db} />;
           default:
             return <FocusGuides />;
         }
@@ -2854,6 +2856,7 @@ const Dashboard = ({ userId, db, onLogout }) => {
                 {currentSection === 'library' && currentPage === 'guides' && '📖 Guides'}
                 {currentSection === 'library' && currentPage === 'nootropics' && '💊 Nootropics'}
                 {currentSection === 'library' && currentPage === 'training' && '🧠 Training Hub'}
+                {currentSection === 'library' && currentPage === 'admin' && '🛠️ Admin'}
               </h1>
               <button
                 onClick={() => setShowMobileHome(true)}
@@ -2915,7 +2918,8 @@ const Dashboard = ({ userId, db, onLogout }) => {
               pages: [
                 { id: 'guides', label: 'Guides', icon: '📖' },
                 { id: 'nootropics', label: 'Nootropics', icon: '💊' },
-                { id: 'training', label: 'Training Hub', icon: '🧠' }
+                { id: 'training', label: 'Training Hub', icon: '🧠' },
+                ...(userEmail === ADMIN_EMAIL ? [{ id: 'admin', label: 'Admin', icon: '🛠️' }] : [])
               ]
             }
           ].map(section => (
@@ -2983,12 +2987,14 @@ const Dashboard = ({ userId, db, onLogout }) => {
 const App = () => {
   const [currentPage, setCurrentPage] = useState('home'); // 'home' or 'dashboard'
   const [userId, setUserId] = useState(null);
+  const [userEmail, setUserEmail] = useState(null); // NEW: store email
   const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUserId(user.uid);
+        setUserEmail(user.email || null); // NEW: store email if available
       } else {
         // Sign in anonymously if no user is authenticated
         try {
@@ -2999,6 +3005,7 @@ const App = () => {
             await signInAnonymously(auth);
           }
           setUserId(auth.currentUser.uid); // Set userId after successful sign-in
+          setUserEmail(auth.currentUser.email || null); // NEW: set email (should be null for anon)
         } catch (error) {
           console.error("Error during anonymous sign-in:", error);
           // Handle sign-in error gracefully, maybe show a message to the user
@@ -3036,7 +3043,7 @@ const App = () => {
       {currentPage === 'home' ? (
         <HomePage onEnterDashboard={handleEnterDashboard} />
       ) : (
-        <Dashboard userId={userId} db={db} onLogout={handleLogout} />
+        <Dashboard userId={userId} userEmail={userEmail} db={db} onLogout={handleLogout} />
       )}
     </DotGridBackground>
   );
