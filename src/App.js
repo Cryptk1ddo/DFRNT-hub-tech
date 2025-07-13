@@ -4,6 +4,115 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, deleteDoc, updateDoc, addDoc, orderBy, where, serverTimestamp, getDocs } from 'firebase/firestore';
 import * as Tone from 'tone'; // Import Tone.js as a namespace
 
+// --- Custom Hook for Swipe Gestures ---
+const useSwipeGesture = (onSwipeLeft, onSwipeRight, threshold = 80) => {
+  const [startX, setStartX] = useState(null);
+  const [currentX, setCurrentX] = useState(null);
+  const [isSwiping, setIsSwiping] = useState(false);
+
+  const handleTouchStart = (e) => {
+    setStartX(e.touches[0].clientX);
+    setCurrentX(e.touches[0].clientX);
+    setIsSwiping(true);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isSwiping) return;
+    setCurrentX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (!isSwiping || startX === null || currentX === null) return;
+
+    const diff = startX - currentX;
+    const absDiff = Math.abs(diff);
+
+    if (absDiff > threshold) {
+      // Haptic feedback if available
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+      
+      if (diff > 0 && onSwipeLeft) {
+        onSwipeLeft();
+      } else if (diff < 0 && onSwipeRight) {
+        onSwipeRight();
+      }
+    }
+
+    setStartX(null);
+    setCurrentX(null);
+    setIsSwiping(false);
+  };
+
+  return {
+    touchHandlers: {
+      onTouchStart: handleTouchStart,
+      onTouchMove: handleTouchMove,
+      onTouchEnd: handleTouchEnd,
+    },
+    swipeOffset: startX && currentX ? startX - currentX : 0,
+    isSwiping
+  };
+};
+
+// --- Swipeable Item Component ---
+const SwipeableItem = ({ 
+  children, 
+  onSwipeLeft, 
+  onSwipeRight, 
+  leftAction = 'Delete', 
+  rightAction = 'Complete',
+  leftColor = 'bg-red-500',
+  rightColor = 'bg-green-500',
+  className = ''
+}) => {
+  const { touchHandlers, swipeOffset, isSwiping } = useSwipeGesture(onSwipeLeft, onSwipeRight);
+  
+  const transform = `translateX(${swipeOffset}px)`;
+  const opacity = Math.min(Math.abs(swipeOffset) / 100, 1);
+
+  return (
+    <div className={`relative overflow-hidden ${className}`}>
+      {/* Background Actions */}
+      <div className="absolute inset-0 flex">
+        <div 
+          className={`flex items-center justify-center px-4 text-white font-bold transition-opacity duration-200 ${
+            swipeOffset > 0 ? rightColor : 'bg-transparent'
+          }`}
+          style={{ 
+            width: '25%', 
+            opacity: swipeOffset > 0 ? opacity : 0 
+          }}
+        >
+          {rightAction}
+        </div>
+        <div className="flex-1"></div>
+        <div 
+          className={`flex items-center justify-center px-4 text-white font-bold transition-opacity duration-200 ${
+            swipeOffset < 0 ? leftColor : 'bg-transparent'
+          }`}
+          style={{ 
+            width: '25%', 
+            opacity: swipeOffset < 0 ? opacity : 0 
+          }}
+        >
+          {leftAction}
+        </div>
+      </div>
+      
+      {/* Content */}
+      <div 
+        className="relative bg-[#0F0F0F] transition-transform duration-200 ease-out touch-pan-y"
+        style={{ transform }}
+        {...touchHandlers}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
 // Firebase configuration and initialization
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
@@ -31,12 +140,17 @@ const DotGridBackground = ({ children }) => (
 );
 
 // Button component with consistent styling
-const NeonButton = ({ onClick, children, className = '' }) => (
+const NeonButton = ({ onClick, children, className = '', ...props }) => (
   <button
     onClick={onClick}
+    {...props}
     className={`bg-[#FF3C00] text-white uppercase px-6 py-3 rounded-br-xl shadow-lg hover:shadow-orange-500/50
                 transition-all duration-300 ease-in-out transform hover:scale-105
-                focus:outline-none focus:ring-2 focus:ring-[#FF3C00] focus:ring-opacity-75 ${className}`}
+                focus:outline-none focus:ring-2 focus:ring-[#FF3C00] focus:ring-opacity-75
+                text-lg md:text-xl font-extrabold tracking-wide
+                md:px-8 md:py-4
+                w-full max-w-xs mx-auto block
+                ${className}`}
   >
     {children}
   </button>
@@ -67,6 +181,17 @@ const Modal = ({ isOpen, onClose, title, message, onConfirm, showConfirm = false
   );
 };
 
+// Floating Action Button (FAB) component
+const FAB = ({ onClick, label = 'Add', icon = '+', className = '' }) => (
+  <button
+    onClick={onClick}
+    className={`fixed bottom-20 right-4 z-50 bg-[#FF3C00] text-white rounded-full shadow-lg p-5 flex items-center justify-center text-3xl font-extrabold md:hidden transition-all duration-300 hover:scale-110 active:scale-95 ${className}`}
+    aria-label={label}
+    style={{ boxShadow: '0 4px 24px 0 rgba(255,60,0,0.25)' }}
+  >
+    {icon}
+  </button>
+);
 
 // --- Homepage Component ---
 const HomePage = ({ onEnterDashboard }) => {
@@ -129,6 +254,7 @@ const PomodoroTimer = ({ userId, db }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [scheduledEvents, setScheduledEvents] = useState([]); // For Scheduler integration
   const [selectedEventId, setSelectedEventId] = useState('');
+  const [showAddTaskForm, setShowAddTaskForm] = useState(false);
 
   const timerRef = useRef(null);
   const audioRef = useRef(null);
@@ -619,62 +745,76 @@ const PomodoroTimer = ({ userId, db }) => {
         <NeonButton onClick={addTask} className="sm:ml-2">Add</NeonButton>
       </div>
 
+      <div className="mb-2">
+        <p className="text-xs text-gray-500 text-center">💡 Swipe right to complete, left to delete</p>
+      </div>
       <ul className="flex-grow overflow-y-auto pr-2">
         {tasks.length === 0 && <p className="text-center text-[#D1D1D1] opacity-70">No tasks yet. Add one to get started!</p>}
         {tasks.map((task) => (
-          <li key={task.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#0F0F0F] p-3 mb-2 rounded-br-lg border border-[#222] hover:bg-[#151515] transition-colors duration-200">
-            {editingTaskId === task.id ? (
-              <input
-                type="text"
-                value={editingTaskText}
-                onChange={(e) => setEditingTaskText(e.target.value)}
-                onBlur={() => saveEditedTask(task.id)} // Save on blur
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') saveEditedTask(task.id);
-                  if (e.key === 'Escape') cancelEditingTask();
-                }}
-                className="flex-grow bg-transparent border-b border-[#FF3C00] text-[#D1D1D1] focus:outline-none p-1 w-full sm:w-auto"
-                autoFocus
-              />
-            ) : (
-              <span
-                className={`flex-grow text-lg ${task.completed ? 'line-through text-gray-500' : 'text-[#D1D1D1]'} w-full sm:w-auto mb-2 sm:mb-0`}
-                onDoubleClick={() => startEditingTask(task)}
-              >
-                {task.text}
-              </span>
-            )}
-            <div className="flex items-center space-x-2 sm:ml-4 self-end sm:self-auto">
-              <input
-                type="checkbox"
-                checked={task.completed}
-                onChange={() => toggleTaskCompletion(task.id, task.completed)}
-                className="form-checkbox h-5 w-5 text-[#FF3C00] bg-black border-gray-600 rounded focus:ring-[#FF3C00]"
-              />
-              {editingTaskId !== task.id && (
-                <>
-                  <button
-                    onClick={() => startEditingTask(task)}
-                    className="text-gray-400 hover:text-[#FF3C00] transition-colors duration-200 p-1"
-                    title="Edit Task"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.38-2.828-2.829z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => deleteTask(task.id)}
-                    className="text-gray-400 hover:text-red-500 transition-colors duration-200 p-1"
-                    title="Delete Task"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </>
+          <SwipeableItem
+            key={task.id}
+            onSwipeLeft={() => deleteTask(task.id)}
+            onSwipeRight={() => toggleTaskCompletion(task.id, task.completed)}
+            leftAction="Delete"
+            rightAction={task.completed ? "Undo" : "Complete"}
+            leftColor="bg-red-500"
+            rightColor={task.completed ? "bg-yellow-500" : "bg-green-500"}
+            className="mb-2"
+          >
+            <li className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#0F0F0F] p-3 rounded-br-lg border border-[#222] hover:bg-[#151515] transition-colors duration-200">
+              {editingTaskId === task.id ? (
+                <input
+                  type="text"
+                  value={editingTaskText}
+                  onChange={(e) => setEditingTaskText(e.target.value)}
+                  onBlur={() => saveEditedTask(task.id)} // Save on blur
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') saveEditedTask(task.id);
+                    if (e.key === 'Escape') cancelEditingTask();
+                  }}
+                  className="flex-grow bg-transparent border-b border-[#FF3C00] text-[#D1D1D1] focus:outline-none p-1 w-full sm:w-auto"
+                  autoFocus
+                />
+              ) : (
+                <span
+                  className={`flex-grow text-lg ${task.completed ? 'line-through text-gray-500' : 'text-[#D1D1D1]'} w-full sm:w-auto mb-2 sm:mb-0`}
+                  onDoubleClick={() => startEditingTask(task)}
+                >
+                  {task.text}
+                </span>
               )}
-            </div>
-          </li>
+              <div className="flex items-center space-x-2 sm:ml-4 self-end sm:self-auto">
+                <input
+                  type="checkbox"
+                  checked={task.completed}
+                  onChange={() => toggleTaskCompletion(task.id, task.completed)}
+                  className="form-checkbox h-5 w-5 text-[#FF3C00] bg-black border-gray-600 rounded focus:ring-[#FF3C00]"
+                />
+                {editingTaskId !== task.id && (
+                  <>
+                    <button
+                      onClick={() => startEditingTask(task)}
+                      className="text-gray-400 hover:text-[#FF3C00] transition-colors duration-200 p-1"
+                      title="Edit Task"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.38-2.828-2.829z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => deleteTask(task.id)}
+                      className="text-gray-400 hover:text-red-500 transition-colors duration-200 p-1"
+                      title="Delete Task"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+            </li>
+          </SwipeableItem>
         ))}
       </ul>
       <Modal
@@ -729,6 +869,29 @@ const PomodoroTimer = ({ userId, db }) => {
             </div>
           </Card>
         </div>
+      )}
+      {/* Add Task Form */}
+      {(showAddTaskForm || window.innerWidth >= 768) && (
+        <Card className="mb-8 p-4 bg-[#0F0F0F] border border-[#222]">
+          <h4 className="text-xl text-[#FF3C00] font-bold mb-4">Add New Task</h4>
+          <div className="space-y-4">
+            <input
+              type="text"
+              value={newTask}
+              onChange={(e) => setNewTask(e.target.value)}
+              placeholder="Enter task description..."
+              className="w-full bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+            />
+            <NeonButton onClick={addTask} className="w-full">Add Task</NeonButton>
+            {window.innerWidth < 768 && (
+              <button onClick={() => setShowAddTaskForm(false)} className="mt-2 text-gray-400 hover:text-red-500">Cancel</button>
+            )}
+          </div>
+        </Card>
+      )}
+      {/* FAB for Add Task (mobile only) */}
+      {window.innerWidth < 768 && !showAddTaskForm && (
+        <FAB onClick={() => setShowAddTaskForm(true)} label="Add Task" icon="+" />
       )}
     </Card>
   );
@@ -1680,6 +1843,16 @@ const Flashcards = ({ userId, db }) => {
     }
   };
 
+  const deleteFlashcard = async (id) => {
+    try {
+      await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/flashcards`, id));
+    } catch (e) {
+      console.error("Error deleting flashcard: ", e);
+      setModalContent({ title: 'Error', message: 'Failed to delete flashcard. Please try again.' });
+      setShowModal(true);
+    }
+  };
+
   const currentCard = flashcards[currentCardIndex];
 
   return (
@@ -1714,8 +1887,15 @@ const Flashcards = ({ userId, db }) => {
               className="w-full bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
             ></textarea>
             <NeonButton onClick={addFlashcard} className="w-full">Save Card</NeonButton>
+            {window.innerWidth < 768 && (
+              <button onClick={() => setShowAddCardForm(false)} className="mt-2 text-gray-400 hover:text-red-500">Cancel</button>
+            )}
           </div>
         </Card>
+      )}
+      {/* FAB for Add Card (mobile only) */}
+      {window.innerWidth < 768 && !showAddCardForm && (
+        <FAB onClick={() => setShowAddCardForm(true)} label="Add Card" icon="+" />
       )}
 
       {flashcards.length > 0 && currentCard ? (
@@ -1748,6 +1928,35 @@ const Flashcards = ({ userId, db }) => {
           <p className="text-md text-[#D1D1D1] opacity-50 mt-2">Add new cards or check back later.</p>
         </div>
       )}
+
+      {/* Flashcard Management */}
+      <div className="mt-8">
+        <h3 className="text-xl font-bold text-[#FF3C00] mb-4">All Flashcards</h3>
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {flashcards.map((card) => (
+            <SwipeableItem
+              key={card.id}
+              onSwipeLeft={() => deleteFlashcard(card.id)}
+              leftAction="Delete"
+              leftColor="bg-red-500"
+              className="mb-2"
+            >
+              <div className="bg-[#0F0F0F] p-3 rounded-br-lg border border-[#222]">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <p className="text-[#D1D1D1] font-semibold mb-1">{card.question}</p>
+                    <p className="text-gray-400 text-sm">{card.answer}</p>
+                    <p className="text-xs text-[#FF3C00] mt-1">
+                      Next Review: {card.nextReviewDate ? new Date(card.nextReviewDate).toLocaleDateString() : 'Never'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </SwipeableItem>
+          ))}
+        </div>
+      </div>
+
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
@@ -1769,6 +1978,7 @@ const TimeBoxingScheduler = ({ userId, db }) => {
   const [modalContent, setModalContent] = useState({ title: '', message: '' });
   const [showCompleted, setShowCompleted] = useState(true);
   const [pomodoroCounts, setPomodoroCounts] = useState({}); // eventId -> count
+  const [showAddEventForm, setShowAddEventForm] = useState(false);
 
   const scheduledEventsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/scheduledEvents`);
 
@@ -1949,40 +2159,49 @@ const TimeBoxingScheduler = ({ userId, db }) => {
       </p>
 
       {/* Add New Event Form */}
-      <Card className="mb-8 p-4 bg-[#0F0F0F] border border-[#222]">
-        <h3 className="text-xl text-[#FF3C00] font-bold mb-4">Add New Time Box</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <input
-            type="text"
-            value={newEventTitle}
-            onChange={(e) => setNewEventTitle(e.target.value)}
-            placeholder="Event Title"
-            className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
-          />
-          <input
-            type="date"
-            value={newEventDate}
-            onChange={(e) => setNewEventDate(e.target.value)}
-            className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
-          />
-          <input
-            type="time"
-            value={newEventStartTime}
-            onChange={(e) => setNewEventStartTime(e.target.value)}
-            className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
-          />
-          <input
-            type="time"
-            value={newEventEndTime}
-            onChange={(e) => setNewEventEndTime(e.target.value)}
-            className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
-          />
-        </div>
-        <div className="flex justify-between gap-4">
-          <NeonButton onClick={addEvent} className="flex-grow">Add Event</NeonButton>
-          <NeonButton onClick={exportEventsToIcs} className="flex-grow">Export to Calendar</NeonButton>
-        </div>
-      </Card>
+      {(showAddEventForm || window.innerWidth >= 768) && (
+        <Card className="mb-8 p-4 bg-[#0F0F0F] border border-[#222]">
+          <h3 className="text-xl text-[#FF3C00] font-bold mb-4">Add New Time Box</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <input
+              type="text"
+              value={newEventTitle}
+              onChange={(e) => setNewEventTitle(e.target.value)}
+              placeholder="Event Title"
+              className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+            />
+            <input
+              type="date"
+              value={newEventDate}
+              onChange={(e) => setNewEventDate(e.target.value)}
+              className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+            />
+            <input
+              type="time"
+              value={newEventStartTime}
+              onChange={(e) => setNewEventStartTime(e.target.value)}
+              className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+            />
+            <input
+              type="time"
+              value={newEventEndTime}
+              onChange={(e) => setNewEventEndTime(e.target.value)}
+              className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+            />
+          </div>
+          <div className="flex justify-between gap-4">
+            <NeonButton onClick={addEvent} className="flex-grow">Add Event</NeonButton>
+            <NeonButton onClick={exportEventsToIcs} className="flex-grow">Export to Calendar</NeonButton>
+            {window.innerWidth < 768 && (
+              <button onClick={() => setShowAddEventForm(false)} className="ml-2 text-gray-400 hover:text-red-500">Cancel</button>
+            )}
+          </div>
+        </Card>
+      )}
+      {/* FAB for Add Event (mobile only) */}
+      {window.innerWidth < 768 && !showAddEventForm && (
+        <FAB onClick={() => setShowAddEventForm(true)} label="Add Event" icon="+" />
+      )}
 
       {/* Scheduled Events List */}
       <div className="flex justify-between items-center mb-4">
@@ -1998,6 +2217,9 @@ const TimeBoxingScheduler = ({ userId, db }) => {
             Show Completed
           </label>
         </div>
+      </div>
+      <div className="mb-2">
+        <p className="text-xs text-gray-500 text-center">💡 Swipe right to complete, left to delete</p>
       </div>
       <div className="flex-grow overflow-y-auto pr-2">
         {sortedDates.length === 0 ? (
@@ -2017,40 +2239,50 @@ const TimeBoxingScheduler = ({ userId, db }) => {
                 </h4>
                 <ul className="space-y-2">
                   {filteredEvents.map(event => (
-                    <li key={event.id} className={`bg-[#0F0F0F] p-3 rounded-br-lg border border-[#222] flex justify-between items-center transition-all duration-200 ${
-                      event.completed ? 'opacity-60 bg-[#0a0a0a]' : ''
-                    }`}>
-                      <div className="flex items-center space-x-3">
-                        <input
-                          type="checkbox"
-                          checked={event.completed || false}
-                          onChange={() => toggleEventCompletion(event.id, event.completed || false)}
-                          className="h-5 w-5 text-[#FF3C00] bg-black border-gray-600 rounded focus:ring-[#FF3C00]"
-                        />
-                        <div>
-                          <p className={`text-lg font-bold ${event.completed ? 'line-through text-gray-500' : 'text-[#D1D1D1]'}`}>
-                            {event.title}
-                          </p>
-                          <p className="text-sm text-gray-400">{event.startTime} - {event.endTime}</p>
-                          {event.completed && event.completedAt && (
-                            <p className="text-xs text-green-500">
-                              Completed: {new Date(event.completedAt).toLocaleString()}
+                    <SwipeableItem
+                      key={event.id}
+                      onSwipeLeft={() => deleteEvent(event.id)}
+                      onSwipeRight={() => toggleEventCompletion(event.id, event.completed || false)}
+                      leftAction="Delete"
+                      rightAction={event.completed ? "Undo" : "Complete"}
+                      leftColor="bg-red-500"
+                      rightColor={event.completed ? "bg-yellow-500" : "bg-green-500"}
+                    >
+                      <li className={`bg-[#0F0F0F] p-3 rounded-br-lg border border-[#222] flex justify-between items-center transition-all duration-200 ${
+                        event.completed ? 'opacity-60 bg-[#0a0a0a]' : ''
+                      }`}>
+                        <div className="flex items-center space-x-3">
+                          <input
+                            type="checkbox"
+                            checked={event.completed || false}
+                            onChange={() => toggleEventCompletion(event.id, event.completed || false)}
+                            className="h-5 w-5 text-[#FF3C00] bg-black border-gray-600 rounded focus:ring-[#FF3C00]"
+                          />
+                          <div>
+                            <p className={`text-lg font-bold ${event.completed ? 'line-through text-gray-500' : 'text-[#D1D1D1]'}`}>
+                              {event.title}
                             </p>
-                          )}
-                          {/* Pomodoro count */}
-                          <p className="text-xs text-[#FF3C00] mt-1">🍅 Pomodoros: {pomodoroCounts[event.id] || 0}</p>
+                            <p className="text-sm text-gray-400">{event.startTime} - {event.endTime}</p>
+                            {event.completed && event.completedAt && (
+                              <p className="text-xs text-green-500">
+                                Completed: {new Date(event.completedAt).toLocaleString()}
+                              </p>
+                            )}
+                            {/* Pomodoro count */}
+                            <p className="text-xs text-[#FF3C00] mt-1">🍅 Pomodoros: {pomodoroCounts[event.id] || 0}</p>
+                          </div>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => deleteEvent(event.id)}
-                        className="text-gray-400 hover:text-red-500 transition-colors duration-200 p-1"
-                        title="Delete Event"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    </li>
+                        <button
+                          onClick={() => deleteEvent(event.id)}
+                          className="text-gray-400 hover:text-red-500 transition-colors duration-200 p-1"
+                          title="Delete Event"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      </li>
+                    </SwipeableItem>
                   ))}
                 </ul>
               </div>
@@ -2495,6 +2727,7 @@ const Notes = ({ userId, db }) => {
   const [notes, setNotes] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', message: '' });
+  const [showAddNoteForm, setShowAddNoteForm] = useState(false);
 
   const notesCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/notes`);
 
@@ -2645,9 +2878,10 @@ const Notes = ({ userId, db }) => {
                   {bulletNote.length}/150
                 </div>
               </div>
-              <NeonButton onClick={addBulletNote} className="w-full">
-                Add Bullet Note
-              </NeonButton>
+              <NeonButton onClick={addBulletNote} className="w-full">Add Bullet Note</NeonButton>
+              {window.innerWidth < 768 && (
+                <button onClick={() => setShowAddNoteForm(false)} className="mt-2 text-gray-400 hover:text-red-500">Cancel</button>
+              )}
             </div>
           </div>
         ) : (
@@ -2699,9 +2933,10 @@ const Notes = ({ userId, db }) => {
               <div className="text-right text-sm text-gray-500">
                 {Object.values(dailyReport).join('').length}/400 characters
               </div>
-              <NeonButton onClick={addDailyReport} className="w-full">
-                Save Daily Report
-              </NeonButton>
+              <NeonButton onClick={addDailyReport} className="w-full">Save Daily Report</NeonButton>
+              {window.innerWidth < 768 && (
+                <button onClick={() => setShowAddNoteForm(false)} className="mt-2 text-gray-400 hover:text-red-500">Cancel</button>
+              )}
             </div>
           </div>
         )}
@@ -2716,18 +2951,25 @@ const Notes = ({ userId, db }) => {
           </Card>
         ) : (
           notes.map(note => (
-            <Card key={note.id} className="relative">
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-sm text-gray-500">
-                  {formatDate(note.createdAt)}
-                </span>
-                <button
-                  onClick={() => deleteNote(note.id)}
-                  className="text-red-500 hover:text-red-400 text-sm"
-                >
-                  🗑️
-                </button>
-              </div>
+            <SwipeableItem
+              key={note.id}
+              onSwipeLeft={() => deleteNote(note.id)}
+              leftAction="Delete"
+              leftColor="bg-red-500"
+              className="mb-4"
+            >
+              <Card className="relative">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-sm text-gray-500">
+                    {formatDate(note.createdAt)}
+                  </span>
+                  <button
+                    onClick={() => deleteNote(note.id)}
+                    className="text-red-500 hover:text-red-400 text-sm"
+                  >
+                    🗑️
+                  </button>
+                </div>
               
               {note.type === 'bullet' ? (
                 <div className="flex items-start">
@@ -2764,10 +3006,41 @@ const Notes = ({ userId, db }) => {
                   </div>
                 </div>
               )}
-            </Card>
+              </Card>
+            </SwipeableItem>
           ))
         )}
       </div>
+
+      {/* Add Note Form (for bullet or daily) */}
+      {(showAddNoteForm || window.innerWidth >= 768) && (
+        <Card className="mb-8 p-4 bg-[#0F0F0F] border border-[#222]">
+          <h4 className="text-xl text-[#FF3C00] font-bold mb-4">Add Note</h4>
+          <div className="space-y-4">
+            <textarea
+              value={noteType === 'bullet' ? bulletNote : dailyReport[noteType === 'daily' ? 'health' : 'wealth']}
+              onChange={(e) => {
+                if (noteType === 'bullet') {
+                  setBulletNote(e.target.value);
+                } else {
+                  setDailyReport({ ...dailyReport, [noteType === 'daily' ? 'health' : 'wealth']: e.target.value });
+                }
+              }}
+              placeholder={`Enter your ${noteType === 'bullet' ? 'bullet' : 'daily'} note...`}
+              className="w-full p-3 bg-[#1a1a1a] border border-[#333] rounded-lg text-[#D1D1D1] resize-none"
+              rows="3"
+            />
+            <NeonButton onClick={noteType === 'bullet' ? addBulletNote : addDailyReport} className="w-full">Add Note</NeonButton>
+            {window.innerWidth < 768 && (
+              <button onClick={() => setShowAddNoteForm(false)} className="mt-2 text-gray-400 hover:text-red-500">Cancel</button>
+            )}
+          </div>
+        </Card>
+      )}
+      {/* FAB for Add Note (mobile only) */}
+      {window.innerWidth < 768 && !showAddNoteForm && (
+        <FAB onClick={() => setShowAddNoteForm(true)} label="Add Note" icon="+" />
+      )}
 
       <Modal
         isOpen={showModal}
@@ -2784,7 +3057,7 @@ const Dashboard = ({ userId, userEmail, db, onLogout }) => {
   const [currentSection, setCurrentSection] = useState('plan'); // 'plan', 'act', 'review', 'library'
   const [currentPage, setCurrentPage] = useState('scheduler'); // Default page within section
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
-  const [showMobileHome, setShowMobileHome] = useState(false);
+  const [showMobileHome, setShowMobileHome] = useState(true); // Changed to true to show menu by default
 
   const renderContent = () => {
     switch (currentSection) {
@@ -2837,48 +3110,54 @@ const Dashboard = ({ userId, userEmail, db, onLogout }) => {
       { 
         id: 'plan', 
         label: 'Plan', 
-        icon: '📋', 
+        icon: '◉', 
         description: 'Schedule and organize your tasks',
         pages: [
-          { id: 'scheduler', label: 'Scheduler', icon: '🗓️', description: 'Time-boxing with task management' }
+          { id: 'scheduler', label: 'Scheduler', icon: '◉', description: 'Time-boxing with task management' }
         ]
       },
       { 
         id: 'act', 
         label: 'Act', 
-        icon: '⚡', 
+        icon: '▶', 
         description: 'Focus and productivity tools',
         pages: [
-          { id: 'pomodoro', label: 'Pomodoro Timer', icon: '⏰', description: 'Focus timer with task management' },
-          { id: 'binaural', label: 'Binaural Beats', icon: '🎧', description: 'Audio-based focus enhancement' }
+          { id: 'pomodoro', label: 'Pomodoro Timer', icon: '◉', description: 'Focus timer with task management' },
+          { id: 'binaural', label: 'Binaural Beats', icon: '◉', description: 'Audio-based focus enhancement' }
         ]
       },
       { 
         id: 'review', 
         label: 'Review', 
-        icon: '📝', 
+        icon: '◉', 
         description: 'Track your progress and insights',
         pages: [
-          { id: 'notes', label: 'Notes', icon: '📝', description: 'Bullet notes and daily reports' },
-          { id: 'progress', label: 'Progress', icon: '📊', description: 'Productivity charts and stats' }
+          { id: 'notes', label: 'Notes', icon: '◉', description: 'Bullet notes and daily reports' },
+          { id: 'progress', label: 'Progress', icon: '◉', description: 'Productivity charts and stats' }
         ]
       },
       { 
         id: 'library', 
         label: 'Library', 
-        icon: '📚', 
+        icon: '◉', 
         description: 'Knowledge and training resources',
         pages: [
-          { id: 'guides', label: 'Guides', icon: '📖', description: 'Productivity techniques and tips' },
-          { id: 'nootropics', label: 'Nootropics', icon: '💊', description: 'Supplement stacks for cognitive enhancement' },
-          { id: 'training', label: 'Training Hub', icon: '🧠', description: 'Cognitive enhancement and flashcards' }
+          { id: 'guides', label: 'Guides', icon: '◉', description: 'Productivity techniques and tips' },
+          { id: 'nootropics', label: 'Nootropics', icon: '◉', description: 'Supplement stacks for cognitive enhancement' },
+          { id: 'training', label: 'Training Hub', icon: '◉', description: 'Cognitive enhancement and flashcards' }
         ]
       }
     ];
 
     return (
       <div className="p-4">
-        <h2 className="text-2xl font-bold text-[#FF3C00] mb-6 text-center">FocusForge Sections</h2>
+        <div className="text-center mb-8">
+          <h1 className="text-4xl md:text-6xl font-extrabold text-[#FF3C00] uppercase tracking-widest mb-2">
+            FocusForge
+          </h1>
+          <p className="text-lg text-[#D1D1D1]">Choose your productivity tool</p>
+        </div>
+        <h2 className="text-2xl font-bold text-[#FF3C00] mb-6 text-center">Sections</h2>
         <div className="grid grid-cols-1 gap-4">
           {sections.map(section => (
             <Card key={section.id} className="p-4 hover:border-[#FF3C00] transition-all duration-200">
@@ -2968,38 +3247,38 @@ const Dashboard = ({ userId, userEmail, db, onLogout }) => {
             { 
               id: 'plan', 
               label: 'Plan', 
-              icon: '📋',
+              icon: '◉',
               pages: [
-                { id: 'scheduler', label: 'Scheduler', icon: '🗓️' }
+                { id: 'scheduler', label: 'Scheduler', icon: '◉' }
               ]
             },
             { 
               id: 'act', 
               label: 'Act', 
-              icon: '⚡',
+              icon: '▶',
               pages: [
-                { id: 'pomodoro', label: 'Pomodoro Timer', icon: '⏰' },
-                { id: 'binaural', label: 'Binaural Beats', icon: '🎧' }
+                { id: 'pomodoro', label: 'Pomodoro Timer', icon: '◉' },
+                { id: 'binaural', label: 'Binaural Beats', icon: '◉' }
               ]
             },
             { 
               id: 'review', 
               label: 'Review', 
-              icon: '📝',
+              icon: '◉',
               pages: [
-                { id: 'notes', label: 'Notes', icon: '📝' },
-                { id: 'progress', label: 'Progress', icon: '📊' }
+                { id: 'notes', label: 'Notes', icon: '◉' },
+                { id: 'progress', label: 'Progress', icon: '◉' }
               ]
             },
             { 
               id: 'library', 
               label: 'Library', 
-              icon: '📚',
+              icon: '◉',
               pages: [
-                { id: 'guides', label: 'Guides', icon: '📖' },
-                { id: 'nootropics', label: 'Nootropics', icon: '💊' },
-                { id: 'training', label: 'Training Hub', icon: '🧠' },
-                ...(userEmail === ADMIN_EMAIL ? [{ id: 'admin', label: 'Admin', icon: '🛠️' }] : [])
+                { id: 'guides', label: 'Guides', icon: '◉' },
+                { id: 'nootropics', label: 'Nootropics', icon: '◉' },
+                { id: 'training', label: 'Training Hub', icon: '◉' },
+                ...(userEmail === ADMIN_EMAIL ? [{ id: 'admin', label: 'Admin', icon: '◉' }] : [])
               ]
             }
           ].map(section => (
@@ -3065,7 +3344,7 @@ const Dashboard = ({ userId, userEmail, db, onLogout }) => {
 
 // --- Main App Component ---
 const App = () => {
-  const [currentPage, setCurrentPage] = useState('home'); // 'home' or 'dashboard'
+  const [currentPage, setCurrentPage] = useState('dashboard'); // Changed default to 'dashboard'
   const [userId, setUserId] = useState(null);
   const [userEmail, setUserEmail] = useState(null); // NEW: store email
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -3108,9 +3387,9 @@ const App = () => {
     setUserId(null); // Clear user ID on logout
   };
 
-  // Ensure app always starts at home page
+  // Ensure app always starts at dashboard page (menu)
   useEffect(() => {
-    setCurrentPage('home');
+    setCurrentPage('dashboard');
   }, []);
 
   if (!isAuthReady) {
