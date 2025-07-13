@@ -1,0 +1,51 @@
+{
+  "name": "focusforge",
+  "version": "1.0.0",
+  "description": "A comprehensive productivity and focus application with Pomodoro timer, binaural beats, flashcards, and more",
+  "main": "index.js",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "deploy": "npm run build && cp -r build/* docs/ && touch docs/.nojekyll && echo 'Files copied to docs folder. Please commit and push to GitHub.'"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "firebase": "^10.7.1",
+    "tone": "^13.8.25",
+    "web-vitals": "^3.5.0"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.1.0",
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/user-event": "^14.5.1"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "homepage": "https://cryptk1ddo.github.io/DFRNT-hub-tech",
+  "keywords": [
+    "productivity",
+    "pomodoro",
+    "focus",
+    "binaural-beats",
+    "flashcards",
+    "react",
+    "firebase"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+} 
