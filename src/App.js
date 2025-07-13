@@ -78,6 +78,21 @@ const HomePage = ({ onEnterDashboard }) => {
       <p className="text-xl md:text-2xl text-[#D1D1D1] mb-10 max-w-2xl leading-relaxed">
         Unleash your potential with precision tools for ultimate concentration and productivity.
       </p>
+      {/* Plan-Act-Review Framework Explanation */}
+      <div className="bg-[#181818] border border-[#333] rounded-xl shadow-lg p-6 mb-10 max-w-2xl text-left">
+        <h2 className="text-2xl font-bold text-[#FF3C00] mb-2">Why Plan-Act-Review?</h2>
+        <p className="text-[#D1D1D1] mb-2">
+          The <span className="font-bold text-[#FF3C00]">Plan-Act-Review</span> framework is a proven, science-backed approach to personal productivity and growth. It breaks down your workflow into three essential phases:
+        </p>
+        <ul className="list-disc pl-6 mb-2 text-[#D1D1D1]">
+          <li><span className="font-bold text-[#FF3C00]">Plan</span>: Set clear intentions, organize your schedule, and define actionable goals before you start.</li>
+          <li><span className="font-bold text-[#FF3C00]">Act</span>: Focus deeply on your tasks using evidence-based methods like the Pomodoro technique and audio tools.</li>
+          <li><span className="font-bold text-[#FF3C00]">Review</span>: Reflect on your progress, capture insights, and adjust your strategy for continuous improvement.</li>
+        </ul>
+        <p className="text-[#D1D1D1]">
+          This cycle is effective because it creates a feedback loop: you plan with intention, act with focus, and review with honesty. This not only boosts productivity, but also builds self-awareness and resilience. By using FocusForge, you're leveraging a framework used by top performers, athletes, and creators worldwide.
+        </p>
+      </div>
       <NeonButton onClick={onEnterDashboard}>
         Enter Dashboard
       </NeonButton>
@@ -1433,6 +1448,29 @@ const BravermanTest = ({ onRetake }) => {
           </div>
         </div>
       )}
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={modalContent.title}
+        message={modalContent.message}
+      />
+      {/* SMART Goals Helper */}
+      <div className="mt-10 bg-[#181818] border border-[#333] rounded-xl shadow-lg p-6 max-w-2xl mx-auto">
+        <h3 className="text-xl font-bold text-[#FF3C00] mb-2">SMART Goals Helper</h3>
+        <p className="text-[#D1D1D1] mb-3">
+          Setting <span className="font-bold text-[#FF3C00]">SMART goals</span> helps you create clear, actionable, and achievable objectives. Use this checklist to make your goals SMART:
+        </p>
+        <ul className="list-disc pl-6 text-[#D1D1D1] mb-2">
+          <li><span className="font-bold text-[#FF3C00]">S</span>pecific: Is your goal clear and well-defined?</li>
+          <li><span className="font-bold text-[#FF3C00]">M</span>easurable: Can you track your progress and know when it's done?</li>
+          <li><span className="font-bold text-[#FF3C00]">A</span>chievable: Is it realistic and within your abilities/resources?</li>
+          <li><span className="font-bold text-[#FF3C00]">R</span>elevant: Does it matter to you and align with your bigger objectives?</li>
+          <li><span className="font-bold text-[#FF3C00]">T</span>ime-bound: Does it have a clear deadline or timeframe?</li>
+        </ul>
+        <p className="text-[#D1D1D1] text-sm mt-2">
+          Example: <span className="italic">"Read 10 pages of a non-fiction book every weekday for the next month to improve my knowledge."</span>
+        </p>
+      </div>
     </Card>
   );
 };
