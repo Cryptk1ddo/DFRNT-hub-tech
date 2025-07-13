@@ -691,8 +691,15 @@ const BinauralBeats = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [oscillatorL, setOscillatorL] = useState(null);
   const [oscillatorR, setOscillatorR] = useState(null);
+  const [gainNode, setGainNode] = useState(null);
+  const [bgAudio, setBgAudio] = useState(null);
+  const [bgGainNode, setBgGainNode] = useState(null);
+  const [bgType, setBgType] = useState('none');
+  const [bgVolume, setBgVolume] = useState(0.2);
+  const [volume, setVolume] = useState(0.3);
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', message: '' });
+  const [isFading, setIsFading] = useState(false);
 
   const presets = [
     { name: 'Delta (0.5-4 Hz)', beat: 2, description: 'Deep sleep, relaxation' },
@@ -702,52 +709,129 @@ const BinauralBeats = () => {
     { name: 'Gamma (30-100 Hz)', beat: 40, description: 'Problem-solving, high-level processing' },
   ];
 
+  const bgOptions = [
+    { value: 'none', label: 'None' },
+    { value: 'nature', label: 'Nature (Rain)' },
+    { value: 'white', label: 'White Noise' },
+    { value: 'pink', label: 'Pink Noise' },
+    { value: 'brown', label: 'Brown Noise' },
+  ];
+
   useEffect(() => {
-    // Clean up oscillators on unmount
+    // Clean up oscillators and audio on unmount
     return () => {
-      if (oscillatorL) oscillatorL.dispose();
-      if (oscillatorR) oscillatorR.dispose();
-      setIsPlaying(false);
+      stopBeats();
     };
+    // eslint-disable-next-line
   }, []);
 
+  // Helper: Resume audio context on user gesture
+  const resumeAudioContext = async () => {
+    if (Tone.context.state !== 'running') {
+      await Tone.context.resume();
+    }
+  };
+
+  // Helper: Fade volume
+  const fadeVolume = (node, from, to, duration = 1) => {
+    if (!node) return;
+    node.gain.cancelScheduledValues(Tone.now());
+    node.gain.setValueAtTime(from, Tone.now());
+    node.gain.linearRampToValueAtTime(to, Tone.now() + duration);
+  };
+
+  // Helper: Create background sound
+  const createBgSound = (type) => {
+    let player, gain;
+    gain = new Tone.Gain(bgVolume).toDestination();
+    if (type === 'nature') {
+      // Use a short rain loop (royalty-free, public domain)
+      player = new Tone.Player({
+        url: 'https://cdn.pixabay.com/audio/2022/07/26/audio_124bfae5b2.mp3', // Rain loop
+        loop: true,
+        autostart: true,
+      }).connect(gain);
+    } else if (type === 'white' || type === 'pink' || type === 'brown') {
+      let noise;
+      if (type === 'white') noise = new Tone.Noise('white');
+      if (type === 'pink') noise = new Tone.Noise('pink');
+      if (type === 'brown') noise = new Tone.Noise('brown');
+      noise.connect(gain);
+      noise.start();
+      player = noise;
+    }
+    return { player, gain };
+  };
+
   const startBeats = async () => {
+    setIsFading(true);
     try {
-      if (oscillatorL && oscillatorR) {
-        oscillatorL.dispose();
-        oscillatorR.dispose();
-      }
+      await resumeAudioContext();
+      if (oscillatorL) oscillatorL.dispose();
+      if (oscillatorR) oscillatorR.dispose();
+      if (gainNode) gainNode.dispose();
+      if (bgAudio) bgAudio.dispose();
+      if (bgGainNode) bgGainNode.dispose();
 
-      const oL = new Tone.Oscillator(baseFrequency, "sine").toDestination();
-      const oR = new Tone.Oscillator(baseFrequency + beatFrequency, "sine").toDestination();
-
-      oL.volume.value = -10; // Reduce volume to prevent harshness
+      // Main binaural beats
+      const gain = new Tone.Gain(0).toDestination();
+      const oL = new Tone.Oscillator(baseFrequency, 'sine').connect(gain);
+      const oR = new Tone.Oscillator(baseFrequency + beatFrequency, 'sine').connect(gain);
+      oL.volume.value = -10;
       oR.volume.value = -10;
-
       oL.start();
       oR.start();
-
       setOscillatorL(oL);
       setOscillatorR(oR);
+      setGainNode(gain);
+      // Fade in
+      fadeVolume(gain, 0, volume, 1.5);
+
+      // Background sound
+      let bg = null, bgGain = null;
+      if (bgType !== 'none') {
+        const { player, gain: g } = createBgSound(bgType);
+        bg = player;
+        bgGain = g;
+        fadeVolume(bgGain, 0, bgVolume, 2);
+        setBgAudio(bg);
+        setBgGainNode(bgGain);
+      }
       setIsPlaying(true);
+      setTimeout(() => setIsFading(false), 1600);
     } catch (error) {
-      console.error("Error starting binaural beats:", error);
-      setModalContent({ title: 'Audio Error', message: 'Failed to start audio. Please ensure your browser allows audio playback.' });
+      setIsFading(false);
+      console.error('Error starting binaural beats:', error);
+      setModalContent({ title: 'Audio Error', message: 'Failed to start audio. Please ensure your browser allows audio playback and try again.' });
       setShowModal(true);
     }
   };
 
   const stopBeats = () => {
-    if (oscillatorL) oscillatorL.stop();
-    if (oscillatorR) oscillatorR.stop();
-    setIsPlaying(false);
+    setIsFading(true);
+    if (gainNode) fadeVolume(gainNode, volume, 0, 1.2);
+    if (bgGainNode) fadeVolume(bgGainNode, bgVolume, 0, 1.2);
+    setTimeout(() => {
+      if (oscillatorL) oscillatorL.dispose();
+      if (oscillatorR) oscillatorR.dispose();
+      if (gainNode) gainNode.dispose();
+      if (bgAudio) bgAudio.dispose();
+      if (bgGainNode) bgGainNode.dispose();
+      setOscillatorL(null);
+      setOscillatorR(null);
+      setGainNode(null);
+      setBgAudio(null);
+      setBgGainNode(null);
+      setIsPlaying(false);
+      setIsFading(false);
+    }, 1300);
   };
 
   const setPreset = (beat) => {
     setBeatFrequency(beat);
     if (isPlaying) {
       stopBeats();
-      startBeats(); // Restart with new frequency
+      setTimeout(() => startBeats(), 1400);
     }
   };
 
@@ -757,7 +841,16 @@ const BinauralBeats = () => {
       oscillatorL.frequency.value = baseFrequency;
       oscillatorR.frequency.value = baseFrequency + beatFrequency;
     }
+    // eslint-disable-next-line
   }, [baseFrequency, beatFrequency, isPlaying, oscillatorL, oscillatorR]);
+
+  // Update volumes if changed
+  useEffect(() => {
+    if (gainNode) gainNode.gain.value = volume;
+  }, [volume, gainNode]);
+  useEffect(() => {
+    if (bgGainNode) bgGainNode.gain.value = bgVolume;
+  }, [bgVolume, bgGainNode]);
 
   return (
     <Card className="w-full h-full flex flex-col p-4 md:p-6">
@@ -778,10 +871,11 @@ const BinauralBeats = () => {
             id="baseFreq"
             type="range"
             min="100"
-            max="500"
+            max="600"
             value={baseFrequency}
-            onChange={(e) => setBaseFrequency(parseFloat(e.target.value))}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-lg accent-[#FF3C00]"
+            onChange={e => setBaseFrequency(Number(e.target.value))}
+            className="w-full accent-[#FF3C00]"
+            disabled={isPlaying && isFading}
           />
         </div>
         <div>
@@ -789,40 +883,83 @@ const BinauralBeats = () => {
           <input
             id="beatFreq"
             type="range"
-            min="0.5"
+            min="1"
             max="40"
-            step="0.1"
             value={beatFrequency}
-            onChange={(e) => setBeatFrequency(parseFloat(e.target.value))}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-lg accent-[#FF3C00]"
+            onChange={e => setBeatFrequency(Number(e.target.value))}
+            className="w-full accent-[#FF3C00]"
+            disabled={isPlaying && isFading}
           />
         </div>
-      </div>
-
-      {/* Presets */}
-      <div className="mb-8">
-        <h3 className="text-xl text-[#FF3C00] font-bold mb-4 uppercase">Presets</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {presets.map((preset) => (
-            <Card key={preset.name} className="p-4 bg-[#0F0F0F] border border-[#222] hover:border-[#FF3C00] transition-all duration-200">
-              <button
-                onClick={() => setPreset(preset.beat)}
-                className="w-full text-left focus:outline-none"
-              >
-                <p className="text-lg text-[#FF3C00] font-bold mb-1">{preset.name}</p>
-                <p className="text-sm text-[#D1D1D1]">{preset.description}</p>
-              </button>
-            </Card>
+        <div className="flex flex-wrap gap-2 mt-2">
+          {presets.map(preset => (
+            <button
+              key={preset.name}
+              onClick={() => setPreset(preset.beat)}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors duration-200
+                ${beatFrequency === preset.beat ? 'bg-[#FF3C00] text-white' : 'bg-gray-700 text-[#D1D1D1] hover:bg-gray-600'}`}
+              disabled={isPlaying && isFading}
+            >
+              {preset.name}
+            </button>
           ))}
+        </div>
+        <div className="flex flex-col md:flex-row gap-4 mt-4">
+          <div className="flex-1">
+            <label className="block text-[#FF3C00] text-lg mb-2">Binaural Volume</label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              onChange={e => setVolume(Number(e.target.value))}
+              className="w-full accent-[#FF3C00]"
+              disabled={!isPlaying}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-[#FF3C00] text-lg mb-2">Background Sound</label>
+            <select
+              value={bgType}
+              onChange={e => setBgType(e.target.value)}
+              className="w-full p-2 rounded-lg bg-[#1a1a1a] text-[#D1D1D1] border border-[#333]"
+              disabled={isPlaying}
+            >
+              {bgOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            {bgType !== 'none' && (
+              <div className="mt-2">
+                <label className="block text-[#FF3C00] text-lg mb-2">Background Volume</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={bgVolume}
+                  onChange={e => setBgVolume(Number(e.target.value))}
+                  className="w-full accent-[#FF3C00]"
+                  disabled={!isPlaying}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-4 mt-6">
+          {!isPlaying ? (
+            <NeonButton onClick={startBeats} disabled={isFading}>
+              ▶️ Start
+            </NeonButton>
+          ) : (
+            <NeonButton onClick={stopBeats} disabled={isFading}>
+              ⏹️ Stop
+            </NeonButton>
+          )}
         </div>
       </div>
 
-      {/* Play/Stop Buttons */}
-      <div className="flex justify-center space-x-4">
-        <NeonButton onClick={isPlaying ? stopBeats : startBeats}>
-          {isPlaying ? 'Stop Beats' : 'Start Beats'}
-        </NeonButton>
-      </div>
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
