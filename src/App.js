@@ -185,7 +185,7 @@ const Modal = ({ isOpen, onClose, title, message, onConfirm, showConfirm = false
 const FAB = ({ onClick, label = 'Add', icon = '+', className = '' }) => (
   <button
     onClick={onClick}
-    className={`fixed bottom-20 right-4 z-50 bg-[#FF3C00] text-white rounded-full shadow-lg p-5 flex items-center justify-center text-3xl font-extrabold md:hidden transition-all duration-300 hover:scale-110 active:scale-95 ${className}`}
+    className={`fixed bottom-6 right-4 z-[100] bg-[#FF3C00] text-white rounded-full shadow-lg p-5 flex items-center justify-center text-3xl font-extrabold md:hidden transition-all duration-300 hover:scale-110 active:scale-95 ${className}`}
     aria-label={label}
     style={{ boxShadow: '0 4px 24px 0 rgba(255,60,0,0.25)' }}
   >
@@ -890,7 +890,7 @@ const PomodoroTimer = ({ userId, db }) => {
         </Card>
       )}
       {/* FAB for Add Task (mobile only) */}
-      {window.innerWidth < 768 && !showAddTaskForm && (
+      {window.innerWidth < 768 && (
         <FAB onClick={() => setShowAddTaskForm(true)} label="Add Task" icon="+" />
       )}
     </Card>
@@ -1894,7 +1894,7 @@ const Flashcards = ({ userId, db }) => {
         </Card>
       )}
       {/* FAB for Add Card (mobile only) */}
-      {window.innerWidth < 768 && !showAddCardForm && (
+      {window.innerWidth < 768 && (
         <FAB onClick={() => setShowAddCardForm(true)} label="Add Card" icon="+" />
       )}
 
@@ -2151,6 +2151,25 @@ const TimeBoxingScheduler = ({ userId, db }) => {
 
   const sortedDates = Object.keys(groupedEvents).sort();
 
+  // Add a BottomSheet component for mobile
+  const BottomSheet = ({ isOpen, onClose, children }) => {
+    if (!isOpen) return null;
+    return (
+      <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black bg-opacity-40">
+        <div className="w-full max-w-md bg-[#181818] rounded-t-2xl p-6 shadow-2xl animate-slide-up relative">
+          <button
+            onClick={onClose}
+            className="absolute top-2 right-4 text-2xl text-gray-400 hover:text-[#FF3C00]"
+            aria-label="Close"
+          >
+            ×
+          </button>
+          {children}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <Card className="w-full h-full flex flex-col p-4 md:p-6">
       <h2 className="text-3xl text-[#FF3C00] font-bold mb-6 uppercase">Scheduler</h2>
@@ -2159,47 +2178,83 @@ const TimeBoxingScheduler = ({ userId, db }) => {
       </p>
 
       {/* Add New Event Form */}
-      {(showAddEventForm || window.innerWidth >= 768) && (
-        <Card className="mb-8 p-4 bg-[#0F0F0F] border border-[#222]">
+      {window.innerWidth < 768 ? (
+        <BottomSheet isOpen={showAddEventForm} onClose={() => setShowAddEventForm(false)}>
           <h3 className="text-xl text-[#FF3C00] font-bold mb-4">Add New Time Box</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="space-y-4">
             <input
               type="text"
               value={newEventTitle}
               onChange={(e) => setNewEventTitle(e.target.value)}
               placeholder="Event Title"
-              className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+              className="w-full bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-4 rounded-lg text-lg focus:outline-none focus:border-[#FF3C00]"
             />
-            <input
-              type="date"
-              value={newEventDate}
-              onChange={(e) => setNewEventDate(e.target.value)}
-              className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
-            />
-            <input
-              type="time"
-              value={newEventStartTime}
-              onChange={(e) => setNewEventStartTime(e.target.value)}
-              className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
-            />
-            <input
-              type="time"
-              value={newEventEndTime}
-              onChange={(e) => setNewEventEndTime(e.target.value)}
-              className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
-            />
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={newEventDate}
+                onChange={(e) => setNewEventDate(e.target.value)}
+                className="flex-1 bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-4 rounded-lg text-lg focus:outline-none focus:border-[#FF3C00]"
+              />
+              <input
+                type="time"
+                value={newEventStartTime}
+                onChange={(e) => setNewEventStartTime(e.target.value)}
+                className="flex-1 bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-4 rounded-lg text-lg focus:outline-none focus:border-[#FF3C00]"
+              />
+              <input
+                type="time"
+                value={newEventEndTime}
+                onChange={(e) => setNewEventEndTime(e.target.value)}
+                className="flex-1 bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-4 rounded-lg text-lg focus:outline-none focus:border-[#FF3C00]"
+              />
+            </div>
+            <NeonButton onClick={addEvent} className="w-full py-4 text-xl">Add Event</NeonButton>
           </div>
-          <div className="flex justify-between gap-4">
-            <NeonButton onClick={addEvent} className="flex-grow">Add Event</NeonButton>
-            <NeonButton onClick={exportEventsToIcs} className="flex-grow">Export to Calendar</NeonButton>
-            {window.innerWidth < 768 && (
-              <button onClick={() => setShowAddEventForm(false)} className="ml-2 text-gray-400 hover:text-red-500">Cancel</button>
-            )}
-          </div>
-        </Card>
+        </BottomSheet>
+      ) : (
+        (showAddEventForm || window.innerWidth >= 768) && (
+          <Card className="mb-8 p-4 bg-[#0F0F0F] border border-[#222]">
+            <h3 className="text-xl text-[#FF3C00] font-bold mb-4">Add New Time Box</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <input
+                type="text"
+                value={newEventTitle}
+                onChange={(e) => setNewEventTitle(e.target.value)}
+                placeholder="Event Title"
+                className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+              />
+              <input
+                type="date"
+                value={newEventDate}
+                onChange={(e) => setNewEventDate(e.target.value)}
+                className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+              />
+              <input
+                type="time"
+                value={newEventStartTime}
+                onChange={(e) => setNewEventStartTime(e.target.value)}
+                className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+              />
+              <input
+                type="time"
+                value={newEventEndTime}
+                onChange={(e) => setNewEventEndTime(e.target.value)}
+                className="bg-[#1a1a1a] border border-[#333] text-[#D1D1D1] p-3 rounded-bl-md focus:outline-none focus:border-[#FF3C00]"
+              />
+            </div>
+            <div className="flex justify-between gap-4">
+              <NeonButton onClick={addEvent} className="flex-grow">Add Event</NeonButton>
+              <NeonButton onClick={exportEventsToIcs} className="flex-grow">Export to Calendar</NeonButton>
+              {window.innerWidth < 768 && (
+                <button onClick={() => setShowAddEventForm(false)} className="ml-2 text-gray-400 hover:text-red-500">Cancel</button>
+              )}
+            </div>
+          </Card>
+        )
       )}
       {/* FAB for Add Event (mobile only) */}
-      {window.innerWidth < 768 && !showAddEventForm && (
+      {window.innerWidth < 768 && (
         <FAB onClick={() => setShowAddEventForm(true)} label="Add Event" icon="+" />
       )}
 
@@ -2207,6 +2262,15 @@ const TimeBoxingScheduler = ({ userId, db }) => {
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-2xl text-[#FF3C00] font-bold uppercase">Scheduled Events</h3>
         <div className="flex items-center space-x-4">
+          <button
+            onClick={() => {
+              const todaySection = document.getElementById('today-section');
+              if (todaySection) todaySection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            className="px-3 py-1 bg-[#FF3C00] text-white rounded-lg text-sm font-bold shadow hover:bg-orange-600 transition-all duration-200"
+          >
+            Today
+          </button>
           <label className="flex items-center text-[#D1D1D1]">
             <input
               type="checkbox"
@@ -2229,11 +2293,10 @@ const TimeBoxingScheduler = ({ userId, db }) => {
             const filteredEvents = groupedEvents[date].filter(event => 
               showCompleted || !event.completed
             );
-            
             if (filteredEvents.length === 0) return null;
-            
+            const isToday = date === new Date().toISOString().slice(0, 10);
             return (
-              <div key={date} className="mb-6">
+              <div key={date} className="mb-6" {...(isToday ? { id: 'today-section' } : {})}>
                 <h4 className="text-xl text-[#FF3C00] font-bold mb-3 border-b border-[#333] pb-2">
                   {new Date(date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                 </h4>
@@ -3038,7 +3101,7 @@ const Notes = ({ userId, db }) => {
         </Card>
       )}
       {/* FAB for Add Note (mobile only) */}
-      {window.innerWidth < 768 && !showAddNoteForm && (
+      {window.innerWidth < 768 && (
         <FAB onClick={() => setShowAddNoteForm(true)} label="Add Note" icon="+" />
       )}
 
