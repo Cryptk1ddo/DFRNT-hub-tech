@@ -2444,6 +2444,126 @@ const Flashcards = ({ userId, db }) => {
   );
 };
 
+// --- Time Boxing Scheduler Component (Remade for Mobile Design) ---
+const TimeBoxingScheduler = ({ userId, db }) => {
+  const [events, setEvents] = useState([]);
+  const [showAddEventForm, setShowAddEventForm] = useState(false);
+
+  // Fetch events from Firestore
+  useEffect(() => {
+    if (!userId) return;
+    const scheduledEventsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/scheduledEvents`);
+    const q = query(scheduledEventsCollectionRef);
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedEvents = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        date: doc.data().date, // 'YYYY-MM-DD'
+      }));
+      setEvents(fetchedEvents);
+    });
+    return () => unsubscribe();
+  }, [userId, db]);
+
+  // Group events by date
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+  const todayEvents = events.filter(ev => ev.date === todayStr);
+  const tomorrowEvents = events.filter(ev => ev.date === tomorrowStr);
+  const upcomingEvents = events.filter(ev => ev.date !== todayStr && ev.date !== tomorrowStr);
+
+  return (
+    <div className="min-h-screen bg-[#181818] text-[#D1D1D1] flex flex-col pb-24">
+      {/* Header */}
+      <div className="p-6 pb-2">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-2xl font-bold">Hi, Anon <span className="inline-block">👋</span></h2>
+          <button className="bg-[#232323] p-2 rounded-lg text-[#D1D1D1] text-xl">
+            <span role="img" aria-label="calendar">📅</span>
+          </button>
+        </div>
+        <div className="text-gray-400 text-lg mb-4">Agenda for today</div>
+        <div className="text-4xl font-extrabold text-white mb-4">Today</div>
+        {/* Today Events */}
+        <div>
+          {todayEvents.length === 0 ? (
+            <div className="text-gray-500 text-center py-8">No tasks for today</div>
+          ) : (
+            todayEvents.map(ev => (
+              <div key={ev.id} className="bg-[#111] rounded-xl p-4 mb-4 flex items-center shadow border border-[#232323]">
+                <input type="checkbox" className="form-checkbox h-6 w-6 text-[#FF9100] bg-black border-[#FF9100] mr-4" />
+                <div>
+                  <div className="font-bold text-lg text-white">{ev.title || ev.name || 'Untitled Task'}</div>
+                  <div className="text-gray-400 text-sm">Today / Unplaced</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        {/* Upcoming */}
+        <div className="text-2xl font-bold text-gray-200 mt-8 mb-2">Upcoming</div>
+        <div className="text-lg font-semibold text-gray-400 mb-2">Tomorrow</div>
+        {/* Tomorrow Events */}
+        <div>
+          {tomorrowEvents.length === 0 ? (
+            <div className="text-gray-500 text-center py-4">No tasks for tomorrow</div>
+          ) : (
+            tomorrowEvents.map(ev => (
+              <div key={ev.id} className="bg-[#111] rounded-xl p-4 mb-4 flex items-center shadow border border-[#232323]">
+                <input type="checkbox" className="form-checkbox h-6 w-6 text-[#FF9100] bg-black border-[#FF9100] mr-4" />
+                <div>
+                  <div className="font-bold text-lg text-white">{ev.title || ev.name || 'Untitled Task'}</div>
+                  <div className="text-gray-400 text-sm">Today / Unplaced</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        {/* Other Upcoming Events (optional) */}
+        {upcomingEvents.length > 0 && (
+          <div className="mt-4">
+            {upcomingEvents.map(ev => (
+              <div key={ev.id} className="bg-[#111] rounded-xl p-4 mb-4 flex items-center shadow border border-[#232323]">
+                <input type="checkbox" className="form-checkbox h-6 w-6 text-[#FF9100] bg-black border-[#FF9100] mr-4" />
+                <div>
+                  <div className="font-bold text-lg text-white">{ev.title || ev.name || 'Untitled Task'}</div>
+                  <div className="text-gray-400 text-sm">{ev.date} / Unplaced</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* FAB */}
+      <button className="fixed bottom-24 right-6 bg-[#FF9100] text-white rounded-full w-16 h-16 flex items-center justify-center text-4xl shadow-lg z-50">
+        +
+      </button>
+      {/* Sticky Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 w-full bg-[#181818] border-t border-[#232323] flex justify-around items-center h-20 z-40">
+        <button className="flex flex-col items-center text-[#FF9100]">
+          <span className="text-2xl">▤</span>
+          <span className="text-xs mt-1">Agenda</span>
+        </button>
+        <button className="flex flex-col items-center text-gray-400">
+          <span className="text-2xl">⚡</span>
+          <span className="text-xs mt-1">Focus</span>
+        </button>
+        <button className="flex flex-col items-center text-gray-400">
+          <span className="text-2xl">📝</span>
+          <span className="text-xs mt-1">Notes</span>
+        </button>
+        <button className="flex flex-col items-center text-gray-400">
+          <span className="text-2xl">📊</span>
+          <span className="text-xs mt-1">Stats</span>
+        </button>
+      </nav>
+    </div>
+  );
+};
+
 // --- Main App Component ---
 const App = () => {
   // You can add routing or state here if needed
