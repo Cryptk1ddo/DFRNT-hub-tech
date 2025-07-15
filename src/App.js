@@ -4,6 +4,18 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, deleteDoc, updateDoc, addDoc, orderBy, where, serverTimestamp, getDocs } from 'firebase/firestore';
 import * as Tone from 'tone'; // Import Tone.js as a namespace
 import PullToRefresh from 'react-simple-pull-to-refresh';
+import { Box, Typography, IconButton, Checkbox, Fab, BottomNavigation, BottomNavigationAction, Paper, Collapse, Fade, TextField, InputAdornment } from '@mui/material';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import AddIcon from '@mui/icons-material/Add';
+import ListIcon from '@mui/icons-material/List';
+import FlashOnIcon from '@mui/icons-material/FlashOn';
+import AssignmentIcon from '@mui/icons-material/Assignment';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CloseIcon from '@mui/icons-material/Close';
+import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 
 // --- Custom Hook for Swipe Gestures ---
 const useSwipeGesture = (onSwipeLeft, onSwipeRight, threshold = 80) => {
@@ -2564,11 +2576,696 @@ const TimeBoxingScheduler = ({ userId, db }) => {
   );
 };
 
+// --- Redesigned Scheduler Page ---
+const SchedulerPage = () => {
+  // Firebase setup
+  const db = getFirestore();
+  const auth = getAuth();
+  const appId = process.env.REACT_APP_FIREBASE_APP_ID || 'default-app-id';
+  const [userId, setUserId] = React.useState(null);
+  const [tasks, setTasks] = React.useState([]);
+  const [newTask, setNewTask] = React.useState('');
+  const [newDueDate, setNewDueDate] = React.useState(new Date());
+  const [loading, setLoading] = React.useState(true);
+  const [navValue, setNavValue] = React.useState(0);
+  const [editingId, setEditingId] = React.useState(null);
+  const [editingText, setEditingText] = React.useState('');
+  const [editingDueDate, setEditingDueDate] = React.useState(new Date());
+  const inputRef = React.useRef();
+
+  // Auth state
+  React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) setUserId(user.uid);
+      else setUserId(null);
+    });
+    return () => unsubscribe();
+  }, [auth]);
+
+  // Fetch tasks
+  React.useEffect(() => {
+    if (!userId) return;
+    setLoading(true);
+    const tasksCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/tasks`);
+    const q = query(tasksCollectionRef);
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTasks(fetchedTasks);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [userId, db, appId]);
+
+  // Add task
+  const handleAddTask = async () => {
+    if (!newTask.trim()) return;
+    const tasksCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/tasks`);
+    await addDoc(tasksCollectionRef, {
+      text: newTask,
+      completed: false,
+      createdAt: new Date(),
+      dueDate: newDueDate.toISOString().slice(0, 10),
+    });
+    setNewTask('');
+    setNewDueDate(new Date());
+    if (inputRef.current) inputRef.current.blur();
+  };
+
+  // Toggle complete
+  const handleToggleComplete = async (task) => {
+    const taskDocRef = doc(db, `artifacts/${appId}/users/${userId}/tasks`, task.id);
+    await updateDoc(taskDocRef, { completed: !task.completed });
+  };
+
+  // Delete task
+  const handleDeleteTask = async (task) => {
+    const taskDocRef = doc(db, `artifacts/${appId}/users/${userId}/tasks`, task.id);
+    await deleteDoc(taskDocRef);
+  };
+
+  // Start editing
+  const handleStartEdit = (task) => {
+    setEditingId(task.id);
+    setEditingText(task.text);
+    setEditingDueDate(task.dueDate ? new Date(task.dueDate) : new Date());
+  };
+
+  // Save edit
+  const handleSaveEdit = async (task) => {
+    const taskDocRef = doc(db, `artifacts/${appId}/users/${userId}/tasks`, task.id);
+    await updateDoc(taskDocRef, {
+      text: editingText,
+      dueDate: editingDueDate.toISOString().slice(0, 10),
+    });
+    setEditingId(null);
+    setEditingText('');
+  };
+
+  // Cancel edit
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingText('');
+  };
+
+  // Date helpers
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+  // Separate tasks
+  const todayTasks = tasks.filter(t => t.dueDate === todayStr && !t.completed);
+  const tomorrowTasks = tasks.filter(t => t.dueDate === tomorrowStr && !t.completed);
+  const upcomingTasks = tasks.filter(t => t.dueDate > tomorrowStr && !t.completed);
+  const completedTasks = tasks.filter(t => t.completed);
+
+  return (
+    <LocalizationProvider dateAdapter={AdapterDateFns}>
+      <Box sx={{ minHeight: '100vh', bgcolor: '#111', color: '#fff', pb: 9 }}>
+        {/* Header */}
+        <Box sx={{ px: { xs: 2, sm: 3 }, pt: 4, pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="h5" fontWeight={700} sx={{ display: 'flex', alignItems: 'center' }}>
+                Hi, Anon <span role="img" aria-label="wave" style={{ marginLeft: 8, fontSize: 28 }}>👋</span>
+              </Typography>
+              <Typography variant="body1" sx={{ color: '#aaa', mt: 0.5 }}>
+                Agenda for today
+              </Typography>
+            </Box>
+            <IconButton sx={{ color: '#fff', bgcolor: '#232323', borderRadius: 2 }}>
+              <CalendarMonthIcon />
+            </IconButton>
+          </Box>
+        </Box>
+
+        {/* Add Task Input */}
+        <Box sx={{ px: { xs: 2, sm: 3 }, mt: 2, display: 'flex', gap: 1, flexDirection: { xs: 'column', sm: 'row' } }}>
+          <Box sx={{ flex: 2 }}>
+            <TextField
+              inputRef={inputRef}
+              value={newTask}
+              onChange={e => setNewTask(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAddTask(); }}
+              placeholder="Add a new task..."
+              variant="outlined"
+              size="small"
+              fullWidth
+              sx={{ bgcolor: '#181818', borderRadius: 1, input: { color: '#fff' } }}
+            />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 140 }}>
+            <DatePicker
+              value={newDueDate}
+              onChange={setNewDueDate}
+              slotProps={{ textField: { size: 'small', sx: { bgcolor: '#181818', borderRadius: 1, input: { color: '#fff' } } } }}
+              format="yyyy-MM-dd"
+            />
+          </Box>
+          <Fab
+            color="warning"
+            aria-label="add"
+            sx={{ minWidth: 0, width: 48, height: 48, bgcolor: '#FF8000', color: '#fff', '&:hover': { bgcolor: '#FF8000' }, boxShadow: 'none', alignSelf: 'center' }}
+            onClick={handleAddTask}
+          >
+            <AddIcon />
+          </Fab>
+        </Box>
+
+        {/* Today Section */}
+        <Box sx={{ px: { xs: 2, sm: 3 }, mt: 3 }}>
+          <Typography variant="h3" fontWeight={900} sx={{ mb: 2, color: '#fff', fontSize: 38 }}>
+            Today
+          </Typography>
+          <Box sx={{ bgcolor: '#181818', borderRadius: 2, p: 2, mb: 3, minHeight: 80 }}>
+            {loading ? (
+              <Typography sx={{ color: '#aaa' }}>Loading...</Typography>
+            ) : todayTasks.length === 0 ? (
+              <Typography sx={{ color: '#aaa' }}>No tasks for today.</Typography>
+            ) : todayTasks.map(task => (
+              <Collapse key={task.id} in={true} timeout={400}>
+                <Fade in={true} timeout={400}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, pr: 1 }}>
+                    <Checkbox
+                      checked={task.completed}
+                      onChange={() => handleToggleComplete(task)}
+                      sx={{
+                        color: '#FF8000',
+                        '&.Mui-checked': { color: '#FF8000' },
+                        mr: 1.5,
+                        borderRadius: 1,
+                        border: '2px solid #FF8000',
+                        p: 0.5
+                      }}
+                    />
+                    {editingId === task.id ? (
+                      <>
+                        <TextField
+                          value={editingText}
+                          onChange={e => setEditingText(e.target.value)}
+                          size="small"
+                          sx={{ bgcolor: '#232323', borderRadius: 1, input: { color: '#fff', fontWeight: 700, fontSize: 18 } }}
+                        />
+                        <DatePicker
+                          value={editingDueDate}
+                          onChange={setEditingDueDate}
+                          slotProps={{ textField: { size: 'small', sx: { bgcolor: '#232323', borderRadius: 1, input: { color: '#fff' } } } }}
+                          format="yyyy-MM-dd"
+                        />
+                        <IconButton onClick={() => handleSaveEdit(task)} sx={{ color: '#FF8000', ml: 1 }}><SaveIcon /></IconButton>
+                        <IconButton onClick={handleCancelEdit} sx={{ color: '#aaa', ml: 0.5 }}><CloseIcon /></IconButton>
+                      </>
+                    ) : (
+                      <Box sx={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                        <Typography fontWeight={700} sx={{ color: '#fff', fontSize: 18, flex: 1 }}>
+                          {task.text}
+                        </Typography>
+                        <Typography sx={{ color: '#aaa', fontSize: 13, ml: 2 }}>
+                          {task.dueDate}
+                        </Typography>
+                        <IconButton onClick={() => handleStartEdit(task)} sx={{ color: '#aaa', ml: 1 }}><EditIcon /></IconButton>
+                        <IconButton onClick={() => handleDeleteTask(task)} sx={{ color: '#FF8000', ml: 1 }}>
+                          <svg width="20" height="20" fill="none" viewBox="0 0 20 20"><path fill="currentColor" fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
+                        </IconButton>
+                      </Box>
+                    )}
+                  </Box>
+                </Fade>
+              </Collapse>
+            ))}
+          </Box>
+        </Box>
+
+        {/* Tomorrow Section */}
+        <Box sx={{ px: { xs: 2, sm: 3 }, mt: 2 }}>
+          <Typography variant="h6" fontWeight={700} sx={{ color: '#ccc', mb: 0.5 }}>
+            Tomorrow
+          </Typography>
+          <Box sx={{ bgcolor: '#181818', borderRadius: 2, p: 2 }}>
+            {tomorrowTasks.length === 0 ? (
+              <Typography sx={{ color: '#aaa' }}>No tasks for tomorrow.</Typography>
+            ) : tomorrowTasks.map(task => (
+              <Collapse key={task.id} in={true} timeout={400}>
+                <Fade in={true} timeout={400}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, pr: 1 }}>
+                    <Checkbox
+                      checked={task.completed}
+                      onChange={() => handleToggleComplete(task)}
+                      sx={{
+                        color: '#FF8000',
+                        '&.Mui-checked': { color: '#FF8000' },
+                        mr: 1.5,
+                        borderRadius: 1,
+                        border: '2px solid #FF8000',
+                        p: 0.5
+                      }}
+                    />
+                    {editingId === task.id ? (
+                      <>
+                        <TextField
+                          value={editingText}
+                          onChange={e => setEditingText(e.target.value)}
+                          size="small"
+                          sx={{ bgcolor: '#232323', borderRadius: 1, input: { color: '#fff', fontWeight: 700, fontSize: 18 } }}
+                        />
+                        <DatePicker
+                          value={editingDueDate}
+                          onChange={setEditingDueDate}
+                          slotProps={{ textField: { size: 'small', sx: { bgcolor: '#232323', borderRadius: 1, input: { color: '#fff' } } } }}
+                          format="yyyy-MM-dd"
+                        />
+                        <IconButton onClick={() => handleSaveEdit(task)} sx={{ color: '#FF8000', ml: 1 }}><SaveIcon /></IconButton>
+                        <IconButton onClick={handleCancelEdit} sx={{ color: '#aaa', ml: 0.5 }}><CloseIcon /></IconButton>
+                      </>
+                    ) : (
+                      <Box sx={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                        <Typography fontWeight={700} sx={{ color: '#fff', fontSize: 18, flex: 1 }}>
+                          {task.text}
+                        </Typography>
+                        <Typography sx={{ color: '#aaa', fontSize: 13, ml: 2 }}>
+                          {task.dueDate}
+                        </Typography>
+                        <IconButton onClick={() => handleStartEdit(task)} sx={{ color: '#aaa', ml: 1 }}><EditIcon /></IconButton>
+                        <IconButton onClick={() => handleDeleteTask(task)} sx={{ color: '#FF8000', ml: 1 }}>
+                          <svg width="20" height="20" fill="none" viewBox="0 0 20 20"><path fill="currentColor" fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
+                        </IconButton>
+                      </Box>
+                    )}
+                  </Box>
+                </Fade>
+              </Collapse>
+            ))}
+          </Box>
+        </Box>
+
+        {/* Upcoming Section */}
+        <Box sx={{ px: { xs: 2, sm: 3 }, mt: 2 }}>
+          <Typography variant="h6" fontWeight={700} sx={{ color: '#ccc', mb: 0.5 }}>
+            Upcoming
+          </Typography>
+          <Box sx={{ bgcolor: '#181818', borderRadius: 2, p: 2 }}>
+            {upcomingTasks.length === 0 ? (
+              <Typography sx={{ color: '#aaa' }}>No upcoming tasks.</Typography>
+            ) : upcomingTasks.map(task => (
+              <Collapse key={task.id} in={true} timeout={400}>
+                <Fade in={true} timeout={400}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, pr: 1 }}>
+                    <Checkbox
+                      checked={task.completed}
+                      onChange={() => handleToggleComplete(task)}
+                      sx={{
+                        color: '#FF8000',
+                        '&.Mui-checked': { color: '#FF8000' },
+                        mr: 1.5,
+                        borderRadius: 1,
+                        border: '2px solid #FF8000',
+                        p: 0.5
+                      }}
+                    />
+                    {editingId === task.id ? (
+                      <>
+                        <TextField
+                          value={editingText}
+                          onChange={e => setEditingText(e.target.value)}
+                          size="small"
+                          sx={{ bgcolor: '#232323', borderRadius: 1, input: { color: '#fff', fontWeight: 700, fontSize: 18 } }}
+                        />
+                        <DatePicker
+                          value={editingDueDate}
+                          onChange={setEditingDueDate}
+                          slotProps={{ textField: { size: 'small', sx: { bgcolor: '#232323', borderRadius: 1, input: { color: '#fff' } } } }}
+                          format="yyyy-MM-dd"
+                        />
+                        <IconButton onClick={() => handleSaveEdit(task)} sx={{ color: '#FF8000', ml: 1 }}><SaveIcon /></IconButton>
+                        <IconButton onClick={handleCancelEdit} sx={{ color: '#aaa', ml: 0.5 }}><CloseIcon /></IconButton>
+                      </>
+                    ) : (
+                      <Box sx={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                        <Typography fontWeight={700} sx={{ color: '#fff', fontSize: 18, flex: 1 }}>
+                          {task.text}
+                        </Typography>
+                        <Typography sx={{ color: '#aaa', fontSize: 13, ml: 2 }}>
+                          {task.dueDate}
+                        </Typography>
+                        <IconButton onClick={() => handleStartEdit(task)} sx={{ color: '#aaa', ml: 1 }}><EditIcon /></IconButton>
+                        <IconButton onClick={() => handleDeleteTask(task)} sx={{ color: '#FF8000', ml: 1 }}>
+                          <svg width="20" height="20" fill="none" viewBox="0 0 20 20"><path fill="currentColor" fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
+                        </IconButton>
+                      </Box>
+                    )}
+                  </Box>
+                </Fade>
+              </Collapse>
+            ))}
+          </Box>
+        </Box>
+
+        {/* Completed Section */}
+        <Box sx={{ px: { xs: 2, sm: 3 }, mt: 2 }}>
+          <Typography variant="h6" fontWeight={700} sx={{ color: '#ccc', mb: 0.5 }}>
+            Completed
+          </Typography>
+          <Box sx={{ bgcolor: '#181818', borderRadius: 2, p: 2 }}>
+            {completedTasks.length === 0 ? (
+              <Typography sx={{ color: '#aaa' }}>No completed tasks yet.</Typography>
+            ) : completedTasks.map(task => (
+              <Collapse key={task.id} in={true} timeout={400}>
+                <Fade in={true} timeout={400}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, pr: 1, opacity: 0.6 }}>
+                    <Checkbox
+                      checked={task.completed}
+                      onChange={() => handleToggleComplete(task)}
+                      sx={{
+                        color: '#FF8000',
+                        '&.Mui-checked': { color: '#FF8000' },
+                        mr: 1.5,
+                        borderRadius: 1,
+                        border: '2px solid #FF8000',
+                        p: 0.5
+                      }}
+                    />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography fontWeight={700} sx={{ color: '#fff', fontSize: 18, textDecoration: 'line-through' }}>
+                        {task.text}
+                      </Typography>
+                      <Typography sx={{ color: '#aaa', fontSize: 13 }}>
+                        {task.dueDate}
+                      </Typography>
+                    </Box>
+                    <IconButton onClick={() => handleDeleteTask(task)} sx={{ color: '#FF8000', ml: 1 }}>
+                      <svg width="20" height="20" fill="none" viewBox="0 0 20 20"><path fill="currentColor" fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
+                    </IconButton>
+                  </Box>
+                </Fade>
+              </Collapse>
+            ))}
+          </Box>
+        </Box>
+
+        {/* Bottom Navigation */}
+        <Paper sx={{ position: 'fixed', bottom: 0, left: 0, right: 0, bgcolor: '#181818', borderTop: '1px solid #222', zIndex: 1200 }} elevation={3}>
+          <BottomNavigation
+            showLabels={false}
+            value={navValue}
+            onChange={(e, newValue) => setNavValue(newValue)}
+            sx={{ bgcolor: '#181818' }}
+          >
+            <BottomNavigationAction icon={<ListIcon />} sx={{ color: navValue === 0 ? '#FF8000' : '#aaa' }} />
+            <BottomNavigationAction icon={<FlashOnIcon />} sx={{ color: navValue === 1 ? '#FF8000' : '#aaa' }} />
+            <BottomNavigationAction icon={<AssignmentIcon />} sx={{ color: navValue === 2 ? '#FF8000' : '#aaa' }} />
+            <BottomNavigationAction icon={<BarChartIcon />} sx={{ color: navValue === 3 ? '#FF8000' : '#aaa' }} />
+          </BottomNavigation>
+        </Paper>
+      </Box>
+    </LocalizationProvider>
+  );
+};
+
+// --- Unified Act Page (Pomodoro + Binaural Beats) ---
+const ActPage = () => {
+  // Pomodoro state
+  const [duration, setDuration] = useState(25); // in minutes
+  const [isActive, setIsActive] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(25 * 60);
+  // Binaural state
+  const [selectedPreset, setSelectedPreset] = useState('brown');
+  // Timer scroller state
+  const minMinutes = 20;
+  const maxMinutes = 120;
+  const radius = 110;
+  const center = 130;
+  const [dragging, setDragging] = useState(false);
+  // Modal state
+  const [showModal, setShowModal] = useState(false);
+  // Binaural audio state
+  const [audioNodes, setAudioNodes] = useState({});
+  // For animated audio icon
+  const [audioAnim, setAudioAnim] = useState(false);
+
+  // --- Binaural Preset Configs ---
+  const presetConfigs = {
+    brown: { base: 220, beat: 2, bg: 'brown' },
+    '8hz': { base: 220, beat: 8, bg: 'brown' },
+    '32hz': { base: 220, beat: 32, bg: 'brown' },
+    nap: { base: 180, beat: 4, bg: 'nature' },
+  };
+
+  // --- Binaural Audio Logic ---
+  const startBinaural = async () => {
+    const { base, beat, bg } = presetConfigs[selectedPreset];
+    await Tone.start(); // resume context on gesture
+    // Clean up any previous
+    stopBinaural();
+    // Main binaural beats
+    const gain = new Tone.Gain(0).toDestination();
+    const oL = new Tone.Oscillator(base, 'sine').connect(gain);
+    const oR = new Tone.Oscillator(base + beat, 'sine').connect(gain);
+    oL.volume.value = -10;
+    oR.volume.value = -10;
+    oL.start();
+    oR.start();
+    gain.gain.linearRampTo(0.3, 1.2);
+    // Background
+    let bgNode = null, bgGain = null;
+    if (bg === 'nature') {
+      bgGain = new Tone.Gain(0.2).toDestination();
+      bgNode = new Tone.Player({ url: 'https://cdn.pixabay.com/audio/2022/07/26/audio_124bfae5b2.mp3', loop: true, autostart: true }).connect(bgGain);
+    } else if (bg === 'brown') {
+      bgGain = new Tone.Gain(0.2).toDestination();
+      bgNode = new Tone.Noise('brown').connect(bgGain);
+      bgNode.start();
+    }
+    setAudioNodes({ oL, oR, gain, bgNode, bgGain });
+  };
+  const stopBinaural = () => {
+    const { oL, oR, gain, bgNode, bgGain } = audioNodes;
+    if (oL) oL.dispose();
+    if (oR) oR.dispose();
+    if (gain) gain.dispose();
+    if (bgNode) bgNode.dispose();
+    if (bgGain) bgGain.dispose();
+    setAudioNodes({});
+  };
+  // Start/stop audio with timer
+  useEffect(() => {
+    if (isActive && !isPaused) {
+      startBinaural();
+    } else {
+      stopBinaural();
+    }
+    // Clean up on unmount
+    return () => stopBinaural();
+    // eslint-disable-next-line
+  }, [isActive, isPaused, selectedPreset]);
+
+  // Haptic feedback helper
+  const triggerHaptic = () => {
+    if (navigator.vibrate) navigator.vibrate(30);
+  };
+
+  // Convert angle to minutes
+  const angleToMinutes = (angle) => {
+    const percent = angle / 270; // 270deg sweep
+    return Math.round(minMinutes + percent * (maxMinutes - minMinutes));
+  };
+  // Convert minutes to angle
+  const minutesToAngle = (min) => {
+    return ((min - minMinutes) / (maxMinutes - minMinutes)) * 270;
+  };
+
+  // Handle drag on SVG knob
+  const handlePointerDown = (e) => {
+    setDragging(true);
+    handlePointerMove(e);
+  };
+  const handlePointerMove = (e) => {
+    if (!dragging) return;
+    const svg = document.getElementById('timer-svg');
+    const rect = svg.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left - center;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top - center;
+    let angle = Math.atan2(y, x) * 180 / Math.PI + 135; // 135deg offset
+    if (angle < 0) angle += 360;
+    if (angle > 270) angle = 270;
+    if (angle < 0) angle = 0;
+    const newMin = angleToMinutes(angle);
+    if (newMin !== duration) triggerHaptic();
+    setDuration(newMin);
+    setSecondsLeft(newMin * 60);
+  };
+  const handlePointerUp = () => setDragging(false);
+
+  // Attach global listeners for drag
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e) => handlePointerMove(e);
+    const up = () => setDragging(false);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('touchmove', move);
+    window.addEventListener('mouseup', up);
+    window.addEventListener('touchend', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('mouseup', up);
+      window.removeEventListener('touchend', up);
+    };
+  }, [dragging]);
+
+  // Timer countdown effect
+  useEffect(() => {
+    if (!isActive || isPaused) return;
+    if (secondsLeft <= 0) {
+      setIsActive(false);
+      setShowModal(true);
+      return;
+    }
+    const interval = setInterval(() => {
+      setSecondsLeft((s) => s - 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isActive, isPaused, secondsLeft]);
+
+  // Sync secondsLeft with duration when not active
+  useEffect(() => {
+    if (!isActive && !dragging) {
+      setSecondsLeft(duration * 60);
+    }
+  }, [duration, isActive, dragging]);
+
+  // Draw arc for timer
+  const angle = minutesToAngle(duration);
+  const arcX = center + radius * Math.cos((angle - 135) * Math.PI / 180);
+  const arcY = center + radius * Math.sin((angle - 135) * Math.PI / 180);
+  const largeArc = angle > 180 ? 1 : 0;
+  const arcPath = `M ${center + radius * Math.cos(-135 * Math.PI / 180)} ${center + radius * Math.sin(-135 * Math.PI / 180)} A ${radius} ${radius} 0 ${largeArc} 1 ${arcX} ${arcY}`;
+
+  // Preset buttons
+  const presets = [
+    { key: 'brown', label: 'Brown' },
+    { key: '8hz', label: '8hz' },
+    { key: '32hz', label: '32hz' },
+    { key: 'nap', label: 'Nap' },
+  ];
+
+  // Timer controls
+  const handleStart = () => {
+    setIsActive(true);
+    setIsPaused(false);
+  };
+  const handlePause = () => setIsPaused((p) => !p);
+  const handleReset = () => {
+    setIsActive(false);
+    setIsPaused(false);
+    setSecondsLeft(duration * 60);
+  };
+
+  // Format time
+  const mins = Math.floor(secondsLeft / 60);
+  const secs = secondsLeft % 60;
+  const timeDisplay = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+  // Animate audio icon when playing
+  useEffect(() => {
+    if (isActive && !isPaused) {
+      setAudioAnim(true);
+    } else {
+      setAudioAnim(false);
+    }
+  }, [isActive, isPaused]);
+
+  return (
+    <div className="min-h-screen bg-[#111] flex flex-col items-center justify-start pt-8 px-2 sm:px-4">
+      <div className="w-full max-w-xs mx-auto">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-2xl font-bold text-white">Rock, Anon <span className="inline-block">🔥</span></h2>
+          <button className="text-gray-400 text-xl"><span role="img" aria-label="settings">⚙️</span></button>
+        </div>
+        <div className="text-gray-400 mb-4">Locked In</div>
+        {/* Task selector placeholder */}
+        <select className="w-full bg-[#181818] text-[#aaa] p-3 rounded-lg mb-4">
+          <option>Select Task</option>
+        </select>
+        {/* Preset buttons */}
+        <div className="flex justify-between mb-6">
+          {presets.map(p => (
+            <button
+              key={p.key}
+              className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors duration-200 ${selectedPreset === p.key ? 'bg-[#FF9100] text-white' : 'bg-[#181818] text-[#aaa]'}`}
+              onClick={() => { setSelectedPreset(p.key); triggerHaptic(); }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {/* Animated Timer Scroller */}
+        <div className="flex flex-col items-center mb-6">
+          <div className="relative">
+            <svg
+              id="timer-svg"
+              width={260}
+              height={260}
+              viewBox="0 0 260 260"
+              className="mb-2"
+              onMouseDown={isActive ? undefined : handlePointerDown}
+              onTouchStart={isActive ? undefined : handlePointerDown}
+              onMouseUp={isActive ? undefined : handlePointerUp}
+              onTouchEnd={isActive ? undefined : handlePointerUp}
+              style={{ touchAction: 'none', userSelect: 'none', opacity: isActive ? 0.7 : 1, transition: 'opacity 0.2s' }}
+            >
+              {/* Track */}
+              <circle cx={center} cy={center} r={radius} fill="none" stroke="#222" strokeWidth={16} />
+              {/* Arc */}
+              <path d={arcPath} fill="none" stroke="#FF9100" strokeWidth={16} strokeLinecap="round" />
+              {/* Knob */}
+              <circle cx={arcX} cy={arcY} r={18} fill="#FF9100" stroke="#fff" strokeWidth={4} />
+            </svg>
+            {/* Animated Audio Icon */}
+            <div className="absolute left-1/2 top-1/2" style={{ transform: 'translate(-50%, -60%)' }}>
+              <span className="block" aria-label="audio waves">
+                <svg width="44" height="44" viewBox="0 0 44 44">
+                  <g>
+                    <rect x="8" y="18" width="4" height="8" rx="2" fill={audioAnim ? '#FF9100' : '#333'} style={{ opacity: audioAnim ? 1 : 0.5, transform: audioAnim ? 'scaleY(1.3)' : 'scaleY(1)', transition: 'all 0.4s' }} />
+                    <rect x="16" y="14" width="4" height="16" rx="2" fill={audioAnim ? '#FF9100' : '#333'} style={{ opacity: audioAnim ? 0.8 : 0.5, transform: audioAnim ? 'scaleY(1.1)' : 'scaleY(1)', transition: 'all 0.4s 0.1s' }} />
+                    <rect x="24" y="10" width="4" height="24" rx="2" fill={audioAnim ? '#FF9100' : '#333'} style={{ opacity: audioAnim ? 0.6 : 0.5, transform: audioAnim ? 'scaleY(1.2)' : 'scaleY(1)', transition: 'all 0.4s 0.2s' }} />
+                    <rect x="32" y="14" width="4" height="16" rx="2" fill={audioAnim ? '#FF9100' : '#333'} style={{ opacity: audioAnim ? 0.8 : 0.5, transform: audioAnim ? 'scaleY(1.1)' : 'scaleY(1)', transition: 'all 0.4s 0.1s' }} />
+                  </g>
+                </svg>
+              </span>
+            </div>
+          </div>
+          <div className="text-white text-6xl font-extrabold mb-2" style={{ fontVariantNumeric: 'tabular-nums', letterSpacing: '-2px', transition: 'color 0.2s', color: isActive ? '#FF9100' : '#fff' }}>{timeDisplay}</div>
+        </div>
+        {/* Timer Controls */}
+        <div className="flex justify-between mb-4">
+          {!isActive ? (
+            <button className="w-full bg-[#FF9100] text-white text-xl font-bold py-4 rounded-xl shadow-lg transition-all duration-200" onClick={handleStart}>Start Focus</button>
+          ) : (
+            <>
+              <button className="flex-1 bg-[#FF9100] text-white text-lg font-bold py-3 rounded-xl shadow-lg mr-2 transition-all duration-200" onClick={handlePause}>{isPaused ? 'Resume' : 'Pause'}</button>
+              <button className="flex-1 bg-[#222] text-white text-lg font-bold py-3 rounded-xl shadow-lg ml-2 transition-all duration-200" onClick={handleReset}>Reset</button>
+            </>
+          )}
+        </div>
+        {/* Timer Complete Modal */}
+        {showModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+            <div className="bg-[#181818] p-8 rounded-xl shadow-lg text-center max-w-xs w-full">
+              <h3 className="text-2xl font-bold text-[#FF9100] mb-4">Time's Up!</h3>
+              <p className="text-white mb-6">Your focus session is complete.</p>
+              <button className="w-full bg-[#FF9100] text-white text-lg font-bold py-3 rounded-xl shadow-lg" onClick={() => setShowModal(false)}>Close</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // --- Main App Component ---
 const App = () => {
-  // You can add routing or state here if needed
-  // For now, render HomePage as a placeholder
-  return <HomePage onEnterDashboard={() => {}} />;
+  return <ActPage />;
 };
 
 export default App;
