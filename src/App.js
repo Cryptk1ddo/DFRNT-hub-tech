@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, deleteDoc, updateDoc, addDoc, orderBy, where, serverTimestamp, getDocs } from 'firebase/firestore';
 import * as Tone from 'tone'; // Import Tone.js as a namespace
 import PullToRefresh from 'react-simple-pull-to-refresh';
@@ -3263,9 +3263,64 @@ const ActPage = () => {
   );
 };
 
-// --- Main App Component ---
+const GoogleSignInScreen = ({ onSignIn }) => (
+  <div className="min-h-screen flex flex-col items-center justify-center bg-[#111] text-white">
+    <h1 className="text-4xl font-extrabold mb-8">FocusForge</h1>
+    <button
+      onClick={onSignIn}
+      className="bg-white text-[#111] font-bold px-8 py-4 rounded-xl shadow-lg flex items-center gap-3 text-lg hover:bg-gray-200 transition"
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24"><g><path fill="#EA4335" d="M12 10.8v3.6h5.1c-.2 1.1-1.3 3.2-5.1 3.2-3.1 0-5.6-2.6-5.6-5.6s2.5-5.6 5.6-5.6c1.8 0 3 .7 3.7 1.4l2.5-2.5C16.7 4.5 14.6 3.5 12 3.5 6.8 3.5 2.5 7.8 2.5 13s4.3 9.5 9.5 9.5c5.5 0 9.1-3.9 9.1-9.4 0-.6-.1-1.1-.2-1.6H12z"/><path fill="#34A853" d="M12 22c2.4 0 4.4-.8 5.9-2.1l-2.8-2.3c-.8.5-1.8.8-3.1.8-2.4 0-4.4-1.6-5.1-3.8H2.9v2.4C4.4 20.2 7 22 12 22z"/><path fill="#FBBC05" d="M6.9 13.7c-.2-.6-.3-1.2-.3-1.7s.1-1.2.3-1.7V7.9H2.9C2.3 9.1 2 10.5 2 12s.3 2.9.9 4.1l4-2.4z"/><path fill="#4285F4" d="M21.8 10.2c-.3-1-1-2.1-2-2.9l-2.5 2.5c.7.5 1.2 1.2 1.4 2.1H12v3.6h5.1c-.2 1.1-1.3 3.2-5.1 3.2-3.1 0-5.6-2.6-5.6-5.6s2.5-5.6 5.6-5.6c1.8 0 3 .7 3.7 1.4l2.5-2.5C16.7 4.5 14.6 3.5 12 3.5 6.8 3.5 2.5 7.8 2.5 13s4.3 9.5 9.5 9.5c5.5 0 9.1-3.9 9.1-9.4 0-.6-.1-1.1-.2-1.6H12z"/></g></svg>
+      Sign in with Google
+    </button>
+  </div>
+);
+
 const App = () => {
-  return <ActPage />;
+  const [user, setUser] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    const provider = new GoogleAuthProvider();
+    const auth = getAuth();
+    try {
+      await signInWithPopup(auth, provider);
+      // User will be set by onAuthStateChanged
+    } catch (error) {
+      alert('Google sign-in failed.');
+    }
+  };
+
+  const handleSignOut = async () => {
+    const auth = getAuth();
+    await signOut(auth);
+    setUser(null);
+  };
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-[#111] text-white text-2xl">Loading...</div>;
+  }
+
+  if (!user) {
+    return <GoogleSignInScreen onSignIn={handleGoogleSignIn} />;
+  }
+
+  // Pass user.uid to ActPage and other components as needed
+  return (
+    <div className="relative">
+      <button onClick={handleSignOut} className="absolute top-4 right-4 bg-[#222] text-white px-4 py-2 rounded-lg z-50">Sign Out</button>
+      <ActPage userId={user.uid} user={user} />
+    </div>
+  );
 };
 
 export default App;
