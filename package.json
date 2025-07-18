@@ -11,6 +11,13 @@
     "deploy": "npm run build && cp -r build/* docs/ && touch docs/.nojekyll && echo 'Files copied to docs folder. Please commit and push to GitHub.'"
   },
   "dependencies": {
+    "@date-io/date-fns": "^3.2.1",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.2.0",
+    "@mui/material": "^7.2.0",
+    "@mui/x-date-pickers": "^8.8.0",
+    "date-fns": "^4.1.0",
     "firebase": "^10.7.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
